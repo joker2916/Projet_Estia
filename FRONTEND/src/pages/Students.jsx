@@ -59,7 +59,7 @@ function Students() {
 
   return (
     <div>
-      <h1>👨‍🎓 Gestion des Étudiants</h1>
+      <h1> Gestion des Étudiants</h1>
 
       {/* Formulaire */}
       <form onSubmit={handleSubmit} style={{

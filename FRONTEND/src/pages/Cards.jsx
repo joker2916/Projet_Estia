@@ -49,7 +49,7 @@ function Cards() {
 
   return (
     <div>
-      <h1>💳 Gestion des Cartes RFID</h1>
+      <h1> Gestion des Cartes RFID</h1>
 
       <form onSubmit={handleSubmit} style={{
         display: "flex",
@@ -87,7 +87,7 @@ function Cards() {
           borderRadius: "5px",
           cursor: "pointer",
         }}>
-          {editId ? "✏️ Modifier" : "➕ Ajouter"}
+          {editId ? " Modifier" : " Ajouter"}
         </button>
       </form>
 

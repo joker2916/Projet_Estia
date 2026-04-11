@@ -20,7 +20,7 @@ function Attendance() {
 
   return (
     <div>
-      <h1>📋 Historique des Présences</h1>
+      <h1> Historique des Présences</h1>
 
       <div style={{
         display: "flex",
@@ -31,7 +31,7 @@ function Attendance() {
         padding: "15px",
         borderRadius: "10px",
       }}>
-        <label>📅 Filtrer par date :</label>
+        <label> Filtrer par date :</label>
         <input
           type="date"
           value={filterDate}
@@ -49,7 +49,7 @@ function Attendance() {
             cursor: "pointer",
           }}
         >
-          🔄 Réinitialiser
+           Réinitialiser
         </button>
       </div>
 
