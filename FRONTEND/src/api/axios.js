@@ -4,7 +4,6 @@ const api = axios.create({
   baseURL: "http://127.0.0.1:8000/api/",
 });
 
-// Ajouter le token automatiquement à chaque requête
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {
@@ -13,11 +12,15 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Si 401 → rediriger vers login
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response && error.response.status === 401) {
+    // Ne PAS rediriger si on est déjà sur la page login
+    if (
+      error.response &&
+      error.response.status === 401 &&
+      !error.config.url.includes("login")
+    ) {
       localStorage.removeItem("token");
       localStorage.removeItem("username");
       window.location.href = "/login";

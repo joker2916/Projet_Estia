@@ -1,5 +1,5 @@
 import { useState } from "react";
-import axios from "axios";
+import api from "../api/axios";
 import { useNavigate } from "react-router-dom";
 
 function Login() {
@@ -15,7 +15,7 @@ function Login() {
     setLoading(true);
 
     try {
-      const res = await axios.post("http://127.0.0.1:8000/api/login/", {
+      const res = await api.post("login/", {
         username,
         password,
       });
@@ -66,7 +66,7 @@ function Login() {
 
         <input
           type="text"
-          placeholder=" Nom d'utilisateur"
+          placeholder="Nom d'utilisateur"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           required
@@ -75,7 +75,7 @@ function Login() {
 
         <input
           type="password"
-          placeholder=" Mot de passe"
+          placeholder="Mot de passe"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
@@ -98,7 +98,7 @@ function Login() {
             marginTop: "10px",
           }}
         >
-          {loading ? " Connexion..." : " Se connecter"}
+          {loading ? "Connexion..." : "Se connecter"}
         </button>
       </form>
     </div>
