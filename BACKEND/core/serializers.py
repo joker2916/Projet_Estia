@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import (
     UniversityInfo, Role, UserProfile,
-    RFIDSettings, AccessRules, NotificationSettings, Student
+    RFIDSettings, AccessRules, NotificationSettings, Student, Card
 )
 
 
@@ -53,3 +53,15 @@ class StudentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Student
         fields = '__all__'
+
+class CardSerializer(serializers.ModelSerializer):
+    student_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Card
+        fields = '__all__'
+
+    def get_student_name(self, obj):
+        if obj.student:
+            return f"{obj.student.first_name} {obj.student.last_name} ({obj.student.matricule})"
+        return "Non assignée"

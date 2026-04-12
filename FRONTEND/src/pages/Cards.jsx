@@ -105,8 +105,8 @@ function Cards() {
               <td style={tdStyle}>{c.uid}</td>
               <td style={tdStyle}>{c.student_name}</td>
               <td style={tdStyle}>
-                <button onClick={() => handleEdit(c)} style={btnEdit}>✏️</button>
-                <button onClick={() => handleDelete(c.id)} style={btnDelete}>🗑️</button>
+                <button onClick={() => handleEdit(c)} style={btnEdit}>Modifier</button>
+                <button onClick={() => handleDelete(c.id)} style={btnDelete}>Supprimer</button>
               </td>
             </tr>
           ))}

@@ -10,11 +10,11 @@ import json
 
 from .models import (
     UniversityInfo, Role, UserProfile,
-    RFIDSettings, AccessRules, NotificationSettings, Student
+    RFIDSettings, AccessRules, NotificationSettings, Student, Card
 )
 from .serializers import (
     UniversityInfoSerializer, RoleSerializer, UserSerializer,
-    RFIDSettingsSerializer, AccessRulesSerializer, NotificationSettingsSerializer, StudentSerializer
+    RFIDSettingsSerializer, AccessRulesSerializer, NotificationSettingsSerializer, StudentSerializer, CardSerializer
 )
 
 
@@ -237,3 +237,43 @@ def student_detail_view(request, pk):
     if request.method == 'DELETE':
         student.delete()
         return Response({'message': 'Étudiant supprimé'}, status=204)
+    
+# ========== CARTES RFID ==========
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def cards_view(request):
+    if request.method == 'GET':
+        cards = Card.objects.all()
+        serializer = CardSerializer(cards, many=True)
+        return Response(serializer.data)
+
+    if request.method == 'POST':
+        serializer = CardSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def card_detail_view(request, pk):
+    try:
+        card = Card.objects.get(pk=pk)
+    except Card.DoesNotExist:
+        return Response({'error': 'Carte introuvable'}, status=404)
+
+    if request.method == 'GET':
+        serializer = CardSerializer(card)
+        return Response(serializer.data)
+
+    if request.method == 'PUT':
+        serializer = CardSerializer(card, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
+
+    if request.method == 'DELETE':
+        card.delete()
+        return Response({'message': 'Carte supprimée'}, status=204)

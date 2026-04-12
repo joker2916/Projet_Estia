@@ -29,4 +29,8 @@ urlpatterns = [
     # Étudiants
     path('students/', views.students_view, name='students'),
     path('students/<int:pk>/', views.student_detail_view, name='student-detail'),
+
+    # Cartes RFID
+    path('cards/', views.cards_view, name='cards'),
+    path('cards/<int:pk>/', views.card_detail_view, name='card-detail'),
 ]

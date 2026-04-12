@@ -83,3 +83,14 @@ class Student(models.Model):
 
     def __str__(self):
         return f"{self.matricule} - {self.last_name} {self.first_name}"
+    
+class Card(models.Model):
+    uid = models.CharField(max_length=50, unique=True)
+    student = models.ForeignKey(Student, on_delete=models.SET_NULL, null=True, blank=True, related_name="cards")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.uid} - {self.student if self.student else 'Non assignée'}"
