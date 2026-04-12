@@ -68,3 +68,18 @@ class NotificationSettings(models.Model):
 
     def __str__(self):
         return "Paramètres Notifications"
+
+class Student(models.Model):
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    email = models.EmailField(blank=True)
+    matricule = models.CharField(max_length=50, unique=True)
+    filiere = models.CharField(max_length=150, blank=True)
+    niveau = models.CharField(max_length=50, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.matricule} - {self.last_name} {self.first_name}"

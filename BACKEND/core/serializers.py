@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import (
     UniversityInfo, Role, UserProfile,
-    RFIDSettings, AccessRules, NotificationSettings
+    RFIDSettings, AccessRules, NotificationSettings, Student
 )
 
 
@@ -47,4 +47,9 @@ class AccessRulesSerializer(serializers.ModelSerializer):
 class NotificationSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = NotificationSettings
+        fields = '__all__'
+
+class StudentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Student
         fields = '__all__'

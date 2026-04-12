@@ -25,4 +25,8 @@ urlpatterns = [
 
     # Notifications
     path('settings/notifications/', views.notification_settings_view, name='notification-settings'),
+
+    # Étudiants
+    path('students/', views.students_view, name='students'),
+    path('students/<int:pk>/', views.student_detail_view, name='student-detail'),
 ]

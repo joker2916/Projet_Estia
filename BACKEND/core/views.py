@@ -10,11 +10,11 @@ import json
 
 from .models import (
     UniversityInfo, Role, UserProfile,
-    RFIDSettings, AccessRules, NotificationSettings
+    RFIDSettings, AccessRules, NotificationSettings, Student
 )
 from .serializers import (
     UniversityInfoSerializer, RoleSerializer, UserSerializer,
-    RFIDSettingsSerializer, AccessRulesSerializer, NotificationSettingsSerializer
+    RFIDSettingsSerializer, AccessRulesSerializer, NotificationSettingsSerializer, StudentSerializer
 )
 
 
@@ -188,3 +188,52 @@ def notification_settings_view(request):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
+
+# ========== ÉTUDIANTS ==========
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def students_view(request):
+    if request.method == 'GET':
+        students = Student.objects.all()
+        search = request.query_params.get('search', '')
+        if search:
+            from django.db.models import Q
+            students = students.filter(
+                Q(matricule__icontains=search) |
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search) |
+                Q(email__icontains=search)
+            )
+        serializer = StudentSerializer(students, many=True)
+        return Response(serializer.data)
+
+    if request.method == 'POST':
+        serializer = StudentSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def student_detail_view(request, pk):
+    try:
+        student = Student.objects.get(pk=pk)
+    except Student.DoesNotExist:
+        return Response({'error': 'Étudiant introuvable'}, status=404)
+
+    if request.method == 'GET':
+        serializer = StudentSerializer(student)
+        return Response(serializer.data)
+
+    if request.method == 'PUT':
+        serializer = StudentSerializer(student, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
+
+    if request.method == 'DELETE':
+        student.delete()
+        return Response({'message': 'Étudiant supprimé'}, status=204)

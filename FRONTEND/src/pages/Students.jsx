@@ -87,7 +87,7 @@ function Students() {
           cursor: "pointer",
           fontSize: "16px",
         }}>
-          {editId ? "✏️ Modifier" : "➕ Ajouter"}
+          {editId ? "✏️ Modifier" : " Ajouter"}
         </button>
       </form>
 
@@ -114,8 +114,8 @@ function Students() {
               <td style={tdStyle}>{s.filiere}</td>
               <td style={tdStyle}>{s.niveau}</td>
               <td style={tdStyle}>
-                <button onClick={() => handleEdit(s)} style={btnEdit}>✏️</button>
-                <button onClick={() => handleDelete(s.id)} style={btnDelete}>🗑️</button>
+                <button onClick={() => handleEdit(s)} style={btnEdit}>Modifier</button>
+                <button onClick={() => handleDelete(s.id)} style={btnDelete}>Effacer</button>
               </td>
             </tr>
           ))}
