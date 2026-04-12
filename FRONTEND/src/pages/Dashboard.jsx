@@ -3,32 +3,19 @@ import api from "../api/axios";
 
 function Dashboard() {
   const [stats, setStats] = useState({
-    students: 0,
-    cards: 0,
-    attendance_today: 0,
-    total_attendance: 0,
+    total_students: 0,
+    total_cards: 0,
+    assigned_cards: 0,
+    unassigned_cards: 0,
   });
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const [students, cards, attendance] = await Promise.all([
-          api.get("students/"),
-          api.get("cards/"),
-          api.get("attendance/"),
-        ]);
-
-        const today = new Date().toISOString().split("T")[0];
-        const todayAttendance = attendance.data.filter((a) => a.date === today);
-
-        setStats({
-          students: students.data.length,
-          cards: cards.data.length,
-          attendance_today: todayAttendance.length,
-          total_attendance: attendance.data.length,
-        });
+        const res = await api.get("dashboard/");
+        setStats(res.data);
       } catch (err) {
-        console.error(err);
+        console.error("Erreur chargement dashboard:", err);
       }
     };
     fetchStats();
@@ -44,10 +31,10 @@ function Dashboard() {
         gap: "20px",
         marginTop: "30px",
       }}>
-        <StatCard  title="Étudiants" value={stats.students} color="#1976d2" />
-        <StatCard  title="Cartes RFID" value={stats.cards} color="#ff9800" />
-        <StatCard  title="Présences aujourd'hui" value={stats.attendance_today} color="#4caf50" />
-        <StatCard  title="Total présences" value={stats.total_attendance} color="#9c27b0" />
+        <StatCard title="Étudiants" value={stats.total_students} color="#1976d2" />
+        <StatCard title="Cartes RFID" value={stats.total_cards} color="#ff9800" />
+        <StatCard title="Cartes Assignées" value={stats.assigned_cards} color="#4caf50" />
+        <StatCard title="Cartes Non Assignées" value={stats.unassigned_cards} color="#9c27b0" />
       </div>
 
       <div style={{

@@ -277,3 +277,19 @@ def card_detail_view(request, pk):
     if request.method == 'DELETE':
         card.delete()
         return Response({'message': 'Carte supprimée'}, status=204)
+
+# ========== DASHBOARD ==========
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dashboard_view(request):
+    total_students = Student.objects.count()
+    total_cards = Card.objects.count()
+    assigned_cards = Card.objects.filter(student__isnull=False).count()
+    unassigned_cards = Card.objects.filter(student__isnull=True).count()
+
+    return Response({
+        'total_students': total_students,
+        'total_cards': total_cards,
+        'assigned_cards': assigned_cards,
+        'unassigned_cards': unassigned_cards,
+    })

@@ -5,6 +5,9 @@ urlpatterns = [
     # Auth
     path('login/', views.login_view, name='login'),
 
+    # Dashboard
+    path('dashboard/', views.dashboard_view, name='dashboard'),
+
     # Info générale
     path('settings/university/', views.university_info_view, name='university-info'),
 
@@ -34,3 +37,4 @@ urlpatterns = [
     path('cards/', views.cards_view, name='cards'),
     path('cards/<int:pk>/', views.card_detail_view, name='card-detail'),
 ]
+
