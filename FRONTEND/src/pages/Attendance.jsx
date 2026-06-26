@@ -21,7 +21,8 @@ function Attendance() {
     if (filters.reason) params.reason = filters.reason;
     if (filters.faculty_id) params.faculty_id = filters.faculty_id;
     if (filters.promotion_id) params.promotion_id = filters.promotion_id;
-    if (filters.academic_year_id) params.academic_year_id = filters.academic_year_id;
+    if (filters.academic_year_id)
+      params.academic_year_id = filters.academic_year_id;
 
     const res = await api.get("access-events/", { params });
     setEvents(res.data);
@@ -41,7 +42,13 @@ function Attendance() {
   useEffect(() => {
     fetchLookups();
     fetchAccessEvents();
-  }, [filters.result, filters.reason, filters.faculty_id, filters.promotion_id, filters.academic_year_id]);
+  }, [
+    filters.result,
+    filters.reason,
+    filters.faculty_id,
+    filters.promotion_id,
+    filters.academic_year_id,
+  ]);
 
   return (
     <div>
@@ -85,7 +92,13 @@ function Attendance() {
 
         <select
           value={filters.faculty_id}
-          onChange={(e) => setFilters({ ...filters, faculty_id: e.target.value, promotion_id: "" })}
+          onChange={(e) =>
+            setFilters({
+              ...filters,
+              faculty_id: e.target.value,
+              promotion_id: "",
+            })
+          }
           style={inputStyle}
         >
           <option value="">Toutes les facultes</option>
@@ -98,12 +111,18 @@ function Attendance() {
 
         <select
           value={filters.promotion_id}
-          onChange={(e) => setFilters({ ...filters, promotion_id: e.target.value })}
+          onChange={(e) =>
+            setFilters({ ...filters, promotion_id: e.target.value })
+          }
           style={inputStyle}
         >
           <option value="">Toutes les promotions</option>
           {promotions
-            .filter((p) => !filters.faculty_id || String(p.faculty) === String(filters.faculty_id))
+            .filter(
+              (p) =>
+                !filters.faculty_id ||
+                String(p.faculty) === String(filters.faculty_id),
+            )
             .map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -113,7 +132,9 @@ function Attendance() {
 
         <select
           value={filters.academic_year_id}
-          onChange={(e) => setFilters({ ...filters, academic_year_id: e.target.value })}
+          onChange={(e) =>
+            setFilters({ ...filters, academic_year_id: e.target.value })
+          }
           style={inputStyle}
         >
           <option value="">Toutes les annees</option>
@@ -156,7 +177,9 @@ function Attendance() {
             {events.map((ev, index) => (
               <tr key={ev.id} style={{ borderBottom: "1px solid #eee" }}>
                 <td style={tdStyle}>{index + 1}</td>
-                <td style={tdStyle}>{new Date(ev.created_at).toLocaleString()}</td>
+                <td style={tdStyle}>
+                  {new Date(ev.created_at).toLocaleString()}
+                </td>
                 <td style={tdStyle}>{ev.student_name || "-"}</td>
                 <td style={tdStyle}>{ev.uid || "-"}</td>
                 <td style={tdStyle}>{ev.faculty_name || "-"}</td>
@@ -166,7 +189,8 @@ function Attendance() {
                     style={{
                       padding: "4px 12px",
                       borderRadius: "20px",
-                      backgroundColor: ev.result === "allowed" ? "#4caf50" : "#f44336",
+                      backgroundColor:
+                        ev.result === "allowed" ? "#4caf50" : "#f44336",
                       color: "white",
                       fontSize: "13px",
                     }}
@@ -182,13 +206,20 @@ function Attendance() {
       </ContentCard>
 
       {events.length === 0 && (
-        <p style={{ textAlign: "center", marginTop: "20px" }}>Aucun evenement d'acces enregistre.</p>
+        <p style={{ textAlign: "center", marginTop: "20px" }}>
+          Aucun evenement d'acces enregistre.
+        </p>
       )}
     </div>
   );
 }
 
-const inputStyle = { padding: "10px", borderRadius: "5px", border: "1px solid #ccc", fontSize: "14px" };
+const inputStyle = {
+  padding: "10px",
+  borderRadius: "5px",
+  border: "1px solid #ccc",
+  fontSize: "14px",
+};
 const thStyle = { padding: "12px", textAlign: "left" };
 const tdStyle = { padding: "10px" };
 

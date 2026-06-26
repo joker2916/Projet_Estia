@@ -13,24 +13,28 @@ function Layout() {
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
       {/* Sidebar */}
-      <div style={{
-        width: "250px",
-        backgroundColor: "#1a237e",
-        color: "white",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        height: "100vh",
-        position: "sticky",
-        top: 0,
-        flexShrink: 0,
-      }}>
+      <div
+        style={{
+          width: "250px",
+          backgroundColor: "#1a237e",
+          color: "white",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          height: "100vh",
+          position: "sticky",
+          top: 0,
+          flexShrink: 0,
+        }}
+      >
         <div>
-          <div style={{
-            padding: "25px",
-            textAlign: "center",
-            borderBottom: "1px solid rgba(255,255,255,0.1)",
-          }}>
+          <div
+            style={{
+              padding: "25px",
+              textAlign: "center",
+              borderBottom: "1px solid rgba(255,255,255,0.1)",
+            }}
+          >
             <h2 style={{ margin: 0 }}> Pointage</h2>
             <p style={{ margin: "5px 0 0", fontSize: "13px", opacity: 0.7 }}>
               RFID System
@@ -42,17 +46,18 @@ function Layout() {
             <SideLink to="/academics" label="Academique" />
             <SideLink to="/cards" label="Cartes RFID" />
             <SideLink to="/attendance" label="Présences" />
-            <SideLink to="/settings"label="Paramètres" />
-
+            <SideLink to="/settings" label="Paramètres" />
           </nav>
         </div>
 
         {/* User + Logout */}
-        <div style={{
-          padding: "20px",
-          borderTop: "1px solid rgba(255,255,255,0.1)",
-          textAlign: "center",
-        }}>
+        <div
+          style={{
+            padding: "20px",
+            borderTop: "1px solid rgba(255,255,255,0.1)",
+            textAlign: "center",
+          }}
+        >
           <p style={{ margin: "0 0 10px", fontSize: "14px" }}>
             👤 {username || "Admin"}
           </p>
@@ -70,19 +75,21 @@ function Layout() {
               fontSize: "14px",
             }}
           >
-             Déconnexion
+            Déconnexion
           </button>
         </div>
       </div>
 
       {/* Main Content */}
-      <div style={{
-        flex: 1,
-        backgroundColor: "#f5f5f5",
-        padding: "30px",
-        overflowY: "auto",
-        minHeight: 0,
-      }}>
+      <div
+        style={{
+          flex: 1,
+          backgroundColor: "#f5f5f5",
+          padding: "30px",
+          overflowY: "auto",
+          minHeight: 0,
+        }}
+      >
         <Outlet />
       </div>
     </div>

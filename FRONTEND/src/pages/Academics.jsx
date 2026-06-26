@@ -98,7 +98,13 @@ function Academics() {
       ...promotionForm,
       department: promotionForm.department || null,
     });
-    setPromotionForm({ faculty: "", department: "", name: "", code: "", level: "" });
+    setPromotionForm({
+      faculty: "",
+      department: "",
+      name: "",
+      code: "",
+      level: "",
+    });
     fetchPromotions();
   };
 
@@ -137,18 +143,61 @@ function Academics() {
       />
 
       <div style={overviewGrid}>
-        <OverviewCard label="Facultes" value={faculties.length} color="#1565c0" />
-        <OverviewCard label="Promotions" value={promotions.length} color="#2e7d32" />
-        <OverviewCard label="Etudiants" value={students.length} color="#ef6c00" />
-        <OverviewCard label="Inscriptions" value={enrollments.length} color="#6a1b9a" />
+        <OverviewCard
+          label="Facultes"
+          value={faculties.length}
+          color="#1565c0"
+        />
+        <OverviewCard
+          label="Promotions"
+          value={promotions.length}
+          color="#2e7d32"
+        />
+        <OverviewCard
+          label="Etudiants"
+          value={students.length}
+          color="#ef6c00"
+        />
+        <OverviewCard
+          label="Inscriptions"
+          value={enrollments.length}
+          color="#6a1b9a"
+        />
       </div>
 
-      <div style={{ display: "flex", gap: "10px", marginBottom: "20px", flexWrap: "wrap" }}>
-        <TabButton label="Facultes" active={tab === "faculties"} onClick={() => setTab("faculties")} />
-        <TabButton label="Annees" active={tab === "years"} onClick={() => setTab("years")} />
-        <TabButton label="Promotions" active={tab === "promotions"} onClick={() => setTab("promotions")} />
-        <TabButton label="Etudiants" active={tab === "students"} onClick={() => setTab("students")} />
-        <TabButton label="Inscriptions" active={tab === "enrollments"} onClick={() => setTab("enrollments")} />
+      <div
+        style={{
+          display: "flex",
+          gap: "10px",
+          marginBottom: "20px",
+          flexWrap: "wrap",
+        }}
+      >
+        <TabButton
+          label="Facultes"
+          active={tab === "faculties"}
+          onClick={() => setTab("faculties")}
+        />
+        <TabButton
+          label="Annees"
+          active={tab === "years"}
+          onClick={() => setTab("years")}
+        />
+        <TabButton
+          label="Promotions"
+          active={tab === "promotions"}
+          onClick={() => setTab("promotions")}
+        />
+        <TabButton
+          label="Etudiants"
+          active={tab === "students"}
+          onClick={() => setTab("students")}
+        />
+        <TabButton
+          label="Inscriptions"
+          active={tab === "enrollments"}
+          onClick={() => setTab("enrollments")}
+        />
       </div>
 
       {tab === "faculties" && (
@@ -157,18 +206,24 @@ function Academics() {
             <input
               placeholder="Nom de la faculte"
               value={facultyForm.name}
-              onChange={(e) => setFacultyForm({ ...facultyForm, name: e.target.value })}
+              onChange={(e) =>
+                setFacultyForm({ ...facultyForm, name: e.target.value })
+              }
               required
               style={inputStyle}
             />
             <input
               placeholder="Code"
               value={facultyForm.code}
-              onChange={(e) => setFacultyForm({ ...facultyForm, code: e.target.value })}
+              onChange={(e) =>
+                setFacultyForm({ ...facultyForm, code: e.target.value })
+              }
               required
               style={inputStyle}
             />
-            <button type="submit" style={primaryBtn}>Ajouter</button>
+            <button type="submit" style={primaryBtn}>
+              Ajouter
+            </button>
           </form>
 
           <table style={tableStyle}>
@@ -185,9 +240,14 @@ function Academics() {
                 <tr key={f.id}>
                   <td style={tdStyle}>{f.name}</td>
                   <td style={tdStyle}>{f.code}</td>
-                  <td style={tdStyle}>{f.is_active ? "Active" : "Desactivee"}</td>
                   <td style={tdStyle}>
-                    <button style={f.is_active ? dangerBtn : successBtn} onClick={() => handleFacultyStatus(f)}>
+                    {f.is_active ? "Active" : "Desactivee"}
+                  </td>
+                  <td style={tdStyle}>
+                    <button
+                      style={f.is_active ? dangerBtn : successBtn}
+                      onClick={() => handleFacultyStatus(f)}
+                    >
                       {f.is_active ? "Desactiver" : "Reactiver"}
                     </button>
                   </td>
@@ -204,21 +264,27 @@ function Academics() {
             <input
               placeholder="Ex: 2026-2027"
               value={yearForm.name}
-              onChange={(e) => setYearForm({ ...yearForm, name: e.target.value })}
+              onChange={(e) =>
+                setYearForm({ ...yearForm, name: e.target.value })
+              }
               required
               style={inputStyle}
             />
             <input
               type="date"
               value={yearForm.start_date}
-              onChange={(e) => setYearForm({ ...yearForm, start_date: e.target.value })}
+              onChange={(e) =>
+                setYearForm({ ...yearForm, start_date: e.target.value })
+              }
               required
               style={inputStyle}
             />
             <input
               type="date"
               value={yearForm.end_date}
-              onChange={(e) => setYearForm({ ...yearForm, end_date: e.target.value })}
+              onChange={(e) =>
+                setYearForm({ ...yearForm, end_date: e.target.value })
+              }
               required
               style={inputStyle}
             />
@@ -226,11 +292,15 @@ function Academics() {
               <input
                 type="checkbox"
                 checked={yearForm.is_current}
-                onChange={(e) => setYearForm({ ...yearForm, is_current: e.target.checked })}
+                onChange={(e) =>
+                  setYearForm({ ...yearForm, is_current: e.target.checked })
+                }
               />
               Annee courante
             </label>
-            <button type="submit" style={primaryBtn}>Ajouter</button>
+            <button type="submit" style={primaryBtn}>
+              Ajouter
+            </button>
           </form>
 
           <table style={tableStyle}>
@@ -261,36 +331,48 @@ function Academics() {
           <form onSubmit={handleCreatePromotion} style={formGrid3}>
             <select
               value={promotionForm.faculty}
-              onChange={(e) => setPromotionForm({ ...promotionForm, faculty: e.target.value })}
+              onChange={(e) =>
+                setPromotionForm({ ...promotionForm, faculty: e.target.value })
+              }
               required
               style={inputStyle}
             >
               <option value="">-- Faculte --</option>
               {faculties.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
               ))}
             </select>
             <input
               placeholder="Nom (ex: L3 Informatique)"
               value={promotionForm.name}
-              onChange={(e) => setPromotionForm({ ...promotionForm, name: e.target.value })}
+              onChange={(e) =>
+                setPromotionForm({ ...promotionForm, name: e.target.value })
+              }
               required
               style={inputStyle}
             />
             <input
               placeholder="Code (ex: L3-INFO)"
               value={promotionForm.code}
-              onChange={(e) => setPromotionForm({ ...promotionForm, code: e.target.value })}
+              onChange={(e) =>
+                setPromotionForm({ ...promotionForm, code: e.target.value })
+              }
               required
               style={inputStyle}
             />
             <input
               placeholder="Niveau (ex: L3)"
               value={promotionForm.level}
-              onChange={(e) => setPromotionForm({ ...promotionForm, level: e.target.value })}
+              onChange={(e) =>
+                setPromotionForm({ ...promotionForm, level: e.target.value })
+              }
               style={inputStyle}
             />
-            <button type="submit" style={primaryBtn}>Ajouter</button>
+            <button type="submit" style={primaryBtn}>
+              Ajouter
+            </button>
           </form>
 
           <table style={tableStyle}>
@@ -311,9 +393,14 @@ function Academics() {
                   <td style={tdStyle}>{p.code}</td>
                   <td style={tdStyle}>{p.faculty_name}</td>
                   <td style={tdStyle}>{p.level || "-"}</td>
-                  <td style={tdStyle}>{p.is_active ? "Active" : "Desactivee"}</td>
                   <td style={tdStyle}>
-                    <button style={p.is_active ? dangerBtn : successBtn} onClick={() => handlePromotionStatus(p)}>
+                    {p.is_active ? "Active" : "Desactivee"}
+                  </td>
+                  <td style={tdStyle}>
+                    <button
+                      style={p.is_active ? dangerBtn : successBtn}
+                      onClick={() => handlePromotionStatus(p)}
+                    >
                       {p.is_active ? "Desactiver" : "Reactiver"}
                     </button>
                   </td>
@@ -331,51 +418,85 @@ function Academics() {
           <form onSubmit={handleCreateEnrollment} style={formGrid3}>
             <select
               value={enrollmentForm.student}
-              onChange={(e) => setEnrollmentForm({ ...enrollmentForm, student: e.target.value })}
+              onChange={(e) =>
+                setEnrollmentForm({
+                  ...enrollmentForm,
+                  student: e.target.value,
+                })
+              }
               required
               style={inputStyle}
             >
               <option value="">-- Etudiant --</option>
               {students.map((s) => (
-                <option key={s.id} value={s.id}>{s.first_name} {s.last_name} ({s.matricule})</option>
+                <option key={s.id} value={s.id}>
+                  {s.first_name} {s.last_name} ({s.matricule})
+                </option>
               ))}
             </select>
             <select
               value={enrollmentForm.faculty}
-              onChange={(e) => setEnrollmentForm({ ...enrollmentForm, faculty: e.target.value })}
+              onChange={(e) =>
+                setEnrollmentForm({
+                  ...enrollmentForm,
+                  faculty: e.target.value,
+                })
+              }
               required
               style={inputStyle}
             >
               <option value="">-- Faculte --</option>
               {faculties.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
               ))}
             </select>
             <select
               value={enrollmentForm.promotion}
-              onChange={(e) => setEnrollmentForm({ ...enrollmentForm, promotion: e.target.value })}
+              onChange={(e) =>
+                setEnrollmentForm({
+                  ...enrollmentForm,
+                  promotion: e.target.value,
+                })
+              }
               required
               style={inputStyle}
             >
               <option value="">-- Promotion --</option>
               {promotions
-                .filter((p) => !enrollmentForm.faculty || String(p.faculty) === String(enrollmentForm.faculty))
+                .filter(
+                  (p) =>
+                    !enrollmentForm.faculty ||
+                    String(p.faculty) === String(enrollmentForm.faculty),
+                )
                 .map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
                 ))}
             </select>
             <select
               value={enrollmentForm.academic_year}
-              onChange={(e) => setEnrollmentForm({ ...enrollmentForm, academic_year: e.target.value })}
+              onChange={(e) =>
+                setEnrollmentForm({
+                  ...enrollmentForm,
+                  academic_year: e.target.value,
+                })
+              }
               required
               style={inputStyle}
             >
               <option value="">-- Annee academique --</option>
               {years.map((y) => (
-                <option key={y.id} value={y.id}>{y.name}</option>
+                <option key={y.id} value={y.id}>
+                  {y.name}
+                </option>
               ))}
             </select>
-            <button type="submit" style={primaryBtn}>Inscrire</button>
+            <button type="submit" style={primaryBtn}>
+              Inscrire
+            </button>
           </form>
 
           <table style={tableStyle}>
@@ -429,7 +550,9 @@ function TabButton({ label, active, onClick }) {
 function OverviewCard({ label, value, color }) {
   return (
     <div style={{ ...overviewCard, borderTop: `4px solid ${color}` }}>
-      <div style={{ fontSize: "13px", color: "#666", marginBottom: "6px" }}>{label}</div>
+      <div style={{ fontSize: "13px", color: "#666", marginBottom: "6px" }}>
+        {label}
+      </div>
       <div style={{ fontSize: "26px", fontWeight: "bold", color }}>{value}</div>
     </div>
   );

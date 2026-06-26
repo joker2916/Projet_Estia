@@ -30,7 +30,8 @@ function Students({ embedded = false }) {
     if (filters.search) params.search = filters.search;
     if (filters.faculty_id) params.faculty_id = filters.faculty_id;
     if (filters.promotion_id) params.promotion_id = filters.promotion_id;
-    if (filters.academic_year_id) params.academic_year_id = filters.academic_year_id;
+    if (filters.academic_year_id)
+      params.academic_year_id = filters.academic_year_id;
 
     const res = await api.get("students/", { params });
     setStudents(res.data);
@@ -50,7 +51,12 @@ function Students({ embedded = false }) {
   useEffect(() => {
     fetchLookups();
     fetchStudents();
-  }, [filters.search, filters.faculty_id, filters.promotion_id, filters.academic_year_id]);
+  }, [
+    filters.search,
+    filters.faculty_id,
+    filters.promotion_id,
+    filters.academic_year_id,
+  ]);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -101,15 +107,28 @@ function Students({ embedded = false }) {
   };
 
   return (
-    <div style={embedded ? { backgroundColor: "white", borderRadius: "12px", padding: "20px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" } : undefined}>
+    <div
+      style={
+        embedded
+          ? {
+              backgroundColor: "white",
+              borderRadius: "12px",
+              padding: "20px",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+            }
+          : undefined
+      }
+    >
       {!embedded && <h1> Gestion des Étudiants</h1>}
 
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-        gap: "10px",
-        marginBottom: "15px",
-      }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+          gap: "10px",
+          marginBottom: "15px",
+        }}
+      >
         <input
           placeholder="Rechercher (nom, matricule, email)"
           value={filters.search}
@@ -118,90 +137,189 @@ function Students({ embedded = false }) {
         />
         <select
           value={filters.faculty_id}
-          onChange={(e) => setFilters({ ...filters, faculty_id: e.target.value, promotion_id: "" })}
+          onChange={(e) =>
+            setFilters({
+              ...filters,
+              faculty_id: e.target.value,
+              promotion_id: "",
+            })
+          }
           style={inputStyle}
         >
           <option value="">Toutes les facultes</option>
           {faculties.map((f) => (
-            <option key={f.id} value={f.id}>{f.name}</option>
+            <option key={f.id} value={f.id}>
+              {f.name}
+            </option>
           ))}
         </select>
         <select
           value={filters.promotion_id}
-          onChange={(e) => setFilters({ ...filters, promotion_id: e.target.value })}
+          onChange={(e) =>
+            setFilters({ ...filters, promotion_id: e.target.value })
+          }
           style={inputStyle}
         >
           <option value="">Toutes les promotions</option>
           {promotions
-            .filter((p) => !filters.faculty_id || String(p.faculty) === String(filters.faculty_id))
+            .filter(
+              (p) =>
+                !filters.faculty_id ||
+                String(p.faculty) === String(filters.faculty_id),
+            )
             .map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
             ))}
         </select>
         <select
           value={filters.academic_year_id}
-          onChange={(e) => setFilters({ ...filters, academic_year_id: e.target.value })}
+          onChange={(e) =>
+            setFilters({ ...filters, academic_year_id: e.target.value })
+          }
           style={inputStyle}
         >
           <option value="">Toutes les annees</option>
           {years.map((y) => (
-            <option key={y.id} value={y.id}>{y.name}</option>
+            <option key={y.id} value={y.id}>
+              {y.name}
+            </option>
           ))}
         </select>
       </div>
 
       {/* Formulaire */}
-      <form onSubmit={handleSubmit} style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-        gap: "10px",
-        marginBottom: "30px",
-        backgroundColor: "white",
-        padding: "20px",
-        borderRadius: "10px",
-      }}>
-        <input name="first_name" placeholder="Prénom" value={form.first_name} onChange={handleChange} required style={inputStyle} />
-        <input name="last_name" placeholder="Nom" value={form.last_name} onChange={handleChange} required style={inputStyle} />
-        <input name="email" placeholder="Email" value={form.email} onChange={handleChange} required style={inputStyle} />
-        <input name="matricule" placeholder="Matricule" value={form.matricule} onChange={handleChange} required style={inputStyle} />
-        <input name="filiere" placeholder="Filière" value={form.filiere} onChange={handleChange} required style={inputStyle} />
-        <input name="niveau" placeholder="Niveau (L1, L2...)" value={form.niveau} onChange={handleChange} required style={inputStyle} />
-        <select name="faculty" value={form.faculty} onChange={handleChange} style={inputStyle}>
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: "10px",
+          marginBottom: "30px",
+          backgroundColor: "white",
+          padding: "20px",
+          borderRadius: "10px",
+        }}
+      >
+        <input
+          name="first_name"
+          placeholder="Prénom"
+          value={form.first_name}
+          onChange={handleChange}
+          required
+          style={inputStyle}
+        />
+        <input
+          name="last_name"
+          placeholder="Nom"
+          value={form.last_name}
+          onChange={handleChange}
+          required
+          style={inputStyle}
+        />
+        <input
+          name="email"
+          placeholder="Email"
+          value={form.email}
+          onChange={handleChange}
+          required
+          style={inputStyle}
+        />
+        <input
+          name="matricule"
+          placeholder="Matricule"
+          value={form.matricule}
+          onChange={handleChange}
+          required
+          style={inputStyle}
+        />
+        <input
+          name="filiere"
+          placeholder="Filière"
+          value={form.filiere}
+          onChange={handleChange}
+          required
+          style={inputStyle}
+        />
+        <input
+          name="niveau"
+          placeholder="Niveau (L1, L2...)"
+          value={form.niveau}
+          onChange={handleChange}
+          required
+          style={inputStyle}
+        />
+        <select
+          name="faculty"
+          value={form.faculty}
+          onChange={handleChange}
+          style={inputStyle}
+        >
           <option value="">-- Faculte --</option>
           {faculties.map((f) => (
-            <option key={f.id} value={f.id}>{f.name}</option>
+            <option key={f.id} value={f.id}>
+              {f.name}
+            </option>
           ))}
         </select>
-        <select name="promotion" value={form.promotion} onChange={handleChange} style={inputStyle}>
+        <select
+          name="promotion"
+          value={form.promotion}
+          onChange={handleChange}
+          style={inputStyle}
+        >
           <option value="">-- Promotion --</option>
           {promotions
-            .filter((p) => !form.faculty || String(p.faculty) === String(form.faculty))
+            .filter(
+              (p) =>
+                !form.faculty || String(p.faculty) === String(form.faculty),
+            )
             .map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
             ))}
         </select>
-        <select name="academic_year" value={form.academic_year} onChange={handleChange} style={inputStyle}>
+        <select
+          name="academic_year"
+          value={form.academic_year}
+          onChange={handleChange}
+          style={inputStyle}
+        >
           <option value="">-- Annee academique --</option>
           {years.map((y) => (
-            <option key={y.id} value={y.id}>{y.name}</option>
+            <option key={y.id} value={y.id}>
+              {y.name}
+            </option>
           ))}
         </select>
-        <button type="submit" style={{
-          gridColumn: "1 / -1",
-          padding: "12px",
-          backgroundColor: editId ? "#ff9800" : "#1976d2",
-          color: "white",
-          border: "none",
-          borderRadius: "5px",
-          cursor: "pointer",
-          fontSize: "16px",
-        }}>
+        <button
+          type="submit"
+          style={{
+            gridColumn: "1 / -1",
+            padding: "12px",
+            backgroundColor: editId ? "#ff9800" : "#1976d2",
+            color: "white",
+            border: "none",
+            borderRadius: "5px",
+            cursor: "pointer",
+            fontSize: "16px",
+          }}
+        >
           {editId ? "✏️ Modifier" : " Ajouter"}
         </button>
       </form>
 
       {/* Tableau */}
-      <table style={{ width: "100%", borderCollapse: "collapse", backgroundColor: "white", borderRadius: "10px" }}>
+      <table
+        style={{
+          width: "100%",
+          borderCollapse: "collapse",
+          backgroundColor: "white",
+          borderRadius: "10px",
+        }}
+      >
         <thead>
           <tr style={{ backgroundColor: "#1976d2", color: "white" }}>
             <th style={thStyle}>Matricule</th>
@@ -227,23 +345,51 @@ function Students({ embedded = false }) {
               <td style={tdStyle}>{s.academic_year_name || "-"}</td>
               <td style={tdStyle}>{s.niveau}</td>
               <td style={tdStyle}>
-                <button onClick={() => handleEdit(s)} style={btnEdit}>Modifier</button>
-                <button onClick={() => handleDelete(s.id)} style={btnDelete}>Effacer</button>
+                <button onClick={() => handleEdit(s)} style={btnEdit}>
+                  Modifier
+                </button>
+                <button onClick={() => handleDelete(s.id)} style={btnDelete}>
+                  Effacer
+                </button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      {students.length === 0 && <p style={{ textAlign: "center", marginTop: "20px" }}>Aucun étudiant enregistré.</p>}
+      {students.length === 0 && (
+        <p style={{ textAlign: "center", marginTop: "20px" }}>
+          Aucun étudiant enregistré.
+        </p>
+      )}
     </div>
   );
 }
 
-const inputStyle = { padding: "10px", borderRadius: "5px", border: "1px solid #ccc", fontSize: "14px" };
+const inputStyle = {
+  padding: "10px",
+  borderRadius: "5px",
+  border: "1px solid #ccc",
+  fontSize: "14px",
+};
 const thStyle = { padding: "12px", textAlign: "left" };
 const tdStyle = { padding: "10px" };
-const btnEdit = { marginRight: "5px", padding: "5px 10px", cursor: "pointer", border: "none", backgroundColor: "#ff9800", color: "white", borderRadius: "4px" };
-const btnDelete = { padding: "5px 10px", cursor: "pointer", border: "none", backgroundColor: "#d32f2f", color: "white", borderRadius: "4px" };
+const btnEdit = {
+  marginRight: "5px",
+  padding: "5px 10px",
+  cursor: "pointer",
+  border: "none",
+  backgroundColor: "#ff9800",
+  color: "white",
+  borderRadius: "4px",
+};
+const btnDelete = {
+  padding: "5px 10px",
+  cursor: "pointer",
+  border: "none",
+  backgroundColor: "#d32f2f",
+  color: "white",
+  borderRadius: "4px",
+};
 
 export default Students;
