@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
 import api from "../api/axios";
 
-function Students() {
+function Students({ embedded = false }) {
   const [students, setStudents] = useState([]);
+  const [faculties, setFaculties] = useState([]);
+  const [promotions, setPromotions] = useState([]);
+  const [years, setYears] = useState([]);
   const [form, setForm] = useState({
     first_name: "",
     last_name: "",
@@ -10,17 +13,44 @@ function Students() {
     matricule: "",
     filiere: "",
     niveau: "",
+    faculty: "",
+    promotion: "",
+    academic_year: "",
+  });
+  const [filters, setFilters] = useState({
+    search: "",
+    faculty_id: "",
+    promotion_id: "",
+    academic_year_id: "",
   });
   const [editId, setEditId] = useState(null);
 
   const fetchStudents = async () => {
-    const res = await api.get("students/");
+    const params = {};
+    if (filters.search) params.search = filters.search;
+    if (filters.faculty_id) params.faculty_id = filters.faculty_id;
+    if (filters.promotion_id) params.promotion_id = filters.promotion_id;
+    if (filters.academic_year_id) params.academic_year_id = filters.academic_year_id;
+
+    const res = await api.get("students/", { params });
     setStudents(res.data);
   };
 
+  const fetchLookups = async () => {
+    const [fRes, pRes, yRes] = await Promise.all([
+      api.get("faculties/", { params: { status: "active" } }),
+      api.get("promotions/", { params: { status: "active" } }),
+      api.get("academic-years/"),
+    ]);
+    setFaculties(fRes.data);
+    setPromotions(pRes.data);
+    setYears(yRes.data);
+  };
+
   useEffect(() => {
+    fetchLookups();
     fetchStudents();
-  }, []);
+  }, [filters.search, filters.faculty_id, filters.promotion_id, filters.academic_year_id]);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -33,7 +63,17 @@ function Students() {
     } else {
       await api.post("students/", form);
     }
-    setForm({ first_name: "", last_name: "", email: "", matricule: "", filiere: "", niveau: "" });
+    setForm({
+      first_name: "",
+      last_name: "",
+      email: "",
+      matricule: "",
+      filiere: "",
+      niveau: "",
+      faculty: "",
+      promotion: "",
+      academic_year: "",
+    });
     setEditId(null);
     fetchStudents();
   };
@@ -46,6 +86,9 @@ function Students() {
       matricule: student.matricule,
       filiere: student.filiere,
       niveau: student.niveau,
+      faculty: student.faculty || "",
+      promotion: student.promotion || "",
+      academic_year: student.academic_year || "",
     });
     setEditId(student.id);
   };
@@ -58,13 +101,59 @@ function Students() {
   };
 
   return (
-    <div>
-      <h1> Gestion des Étudiants</h1>
+    <div style={embedded ? { backgroundColor: "white", borderRadius: "12px", padding: "20px", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" } : undefined}>
+      {!embedded && <h1> Gestion des Étudiants</h1>}
+
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+        gap: "10px",
+        marginBottom: "15px",
+      }}>
+        <input
+          placeholder="Rechercher (nom, matricule, email)"
+          value={filters.search}
+          onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+          style={inputStyle}
+        />
+        <select
+          value={filters.faculty_id}
+          onChange={(e) => setFilters({ ...filters, faculty_id: e.target.value, promotion_id: "" })}
+          style={inputStyle}
+        >
+          <option value="">Toutes les facultes</option>
+          {faculties.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
+        <select
+          value={filters.promotion_id}
+          onChange={(e) => setFilters({ ...filters, promotion_id: e.target.value })}
+          style={inputStyle}
+        >
+          <option value="">Toutes les promotions</option>
+          {promotions
+            .filter((p) => !filters.faculty_id || String(p.faculty) === String(filters.faculty_id))
+            .map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+        </select>
+        <select
+          value={filters.academic_year_id}
+          onChange={(e) => setFilters({ ...filters, academic_year_id: e.target.value })}
+          style={inputStyle}
+        >
+          <option value="">Toutes les annees</option>
+          {years.map((y) => (
+            <option key={y.id} value={y.id}>{y.name}</option>
+          ))}
+        </select>
+      </div>
 
       {/* Formulaire */}
       <form onSubmit={handleSubmit} style={{
         display: "grid",
-        gridTemplateColumns: "1fr 1fr",
+        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
         gap: "10px",
         marginBottom: "30px",
         backgroundColor: "white",
@@ -77,6 +166,26 @@ function Students() {
         <input name="matricule" placeholder="Matricule" value={form.matricule} onChange={handleChange} required style={inputStyle} />
         <input name="filiere" placeholder="Filière" value={form.filiere} onChange={handleChange} required style={inputStyle} />
         <input name="niveau" placeholder="Niveau (L1, L2...)" value={form.niveau} onChange={handleChange} required style={inputStyle} />
+        <select name="faculty" value={form.faculty} onChange={handleChange} style={inputStyle}>
+          <option value="">-- Faculte --</option>
+          {faculties.map((f) => (
+            <option key={f.id} value={f.id}>{f.name}</option>
+          ))}
+        </select>
+        <select name="promotion" value={form.promotion} onChange={handleChange} style={inputStyle}>
+          <option value="">-- Promotion --</option>
+          {promotions
+            .filter((p) => !form.faculty || String(p.faculty) === String(form.faculty))
+            .map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+        </select>
+        <select name="academic_year" value={form.academic_year} onChange={handleChange} style={inputStyle}>
+          <option value="">-- Annee academique --</option>
+          {years.map((y) => (
+            <option key={y.id} value={y.id}>{y.name}</option>
+          ))}
+        </select>
         <button type="submit" style={{
           gridColumn: "1 / -1",
           padding: "12px",
@@ -99,7 +208,9 @@ function Students() {
             <th style={thStyle}>Prénom</th>
             <th style={thStyle}>Nom</th>
             <th style={thStyle}>Email</th>
-            <th style={thStyle}>Filière</th>
+            <th style={thStyle}>Faculte</th>
+            <th style={thStyle}>Promotion</th>
+            <th style={thStyle}>Annee</th>
             <th style={thStyle}>Niveau</th>
             <th style={thStyle}>Actions</th>
           </tr>
@@ -111,7 +222,9 @@ function Students() {
               <td style={tdStyle}>{s.first_name}</td>
               <td style={tdStyle}>{s.last_name}</td>
               <td style={tdStyle}>{s.email}</td>
-              <td style={tdStyle}>{s.filiere}</td>
+              <td style={tdStyle}>{s.faculty_name || "-"}</td>
+              <td style={tdStyle}>{s.promotion_name || "-"}</td>
+              <td style={tdStyle}>{s.academic_year_name || "-"}</td>
               <td style={tdStyle}>{s.niveau}</td>
               <td style={tdStyle}>
                 <button onClick={() => handleEdit(s)} style={btnEdit}>Modifier</button>

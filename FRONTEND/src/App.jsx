@@ -2,10 +2,10 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-import Students from "./pages/Students";
 import Cards from "./pages/Cards";
 import Attendance from "./pages/Attendance";
 import Settings from "./pages/Settings";
+import Academics from "./pages/Academics";
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem("token");
@@ -25,7 +25,8 @@ function App() {
         }
       >
         <Route index element={<Dashboard />} />
-        <Route path="students" element={<Students />} />
+        <Route path="academics" element={<Academics />} />
+        <Route path="students" element={<Navigate to="/academics" replace />} />
         <Route path="cards" element={<Cards />} />
         <Route path="attendance" element={<Attendance />} />
         <Route path="settings" element={<Settings />} />

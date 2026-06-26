@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import api from "../api/axios";
+import PageHeader from "../components/PageHeader";
+import ContentCard from "../components/ContentCard";
 
 function Settings() {
   // --- Info générale ---
@@ -9,14 +11,10 @@ function Settings() {
 
   // --- Utilisateurs & Rôles ---
   const [roles, setRoles] = useState([]);
+  const [permissions, setPermissions] = useState([]);
   const [newRoleName, setNewRoleName] = useState("");
+  const [newPermission, setNewPermission] = useState({ code: "", label: "", module: "" });
   const [users, setUsers] = useState([]);
-
-  // --- RFID ---
-  const [uidLength, setUidLength] = useState(8);
-  const [maxCardsPerStudent, setMaxCardsPerStudent] = useState(1);
-  const [cardValidityDays, setCardValidityDays] = useState(365);
-  const [cardAutoDisable, setCardAutoDisable] = useState(true);
 
   // --- Règles d'accès ---
   const [accessStart, setAccessStart] = useState("07:00");
@@ -44,11 +42,11 @@ function Settings() {
   const loadAllSettings = async () => {
     setLoading(true);
     try {
-      const [uniRes, rolesRes, usersRes, rfidRes, accessRes, notifRes] = await Promise.all([
+      const [uniRes, rolesRes, permissionsRes, usersRes, accessRes, notifRes] = await Promise.all([
         api.get("settings/university/"),
         api.get("settings/roles/"),
+        api.get("settings/permissions/"),
         api.get("settings/users/"),
-        api.get("settings/rfid/"),
         api.get("settings/access/"),
         api.get("settings/notifications/"),
       ]);
@@ -59,13 +57,8 @@ function Settings() {
 
       // Rôles & Utilisateurs
       setRoles(rolesRes.data);
+      setPermissions(permissionsRes.data);
       setUsers(usersRes.data);
-
-      // RFID
-      setUidLength(rfidRes.data.uid_length);
-      setMaxCardsPerStudent(rfidRes.data.max_cards_per_student);
-      setCardValidityDays(rfidRes.data.card_validity_days);
-      setCardAutoDisable(rfidRes.data.card_auto_disable);
 
       // Accès
       setAccessStart(accessRes.data.access_start);
@@ -121,7 +114,7 @@ function Settings() {
       try {
         const res = await api.post("settings/roles/", {
           name: newRoleName.trim(),
-          permissions: [],
+          permission_codes: [],
           active: true,
         });
         setRoles([...roles, res.data]);
@@ -137,7 +130,7 @@ function Settings() {
     const role = roles.find(r => r.id === roleId);
     try {
       const res = await api.put(`settings/roles/${roleId}/`, {
-        ...role,
+        name: role.name,
         active: !role.active,
       });
       setRoles(roles.map(r => r.id === roleId ? res.data : r));
@@ -149,15 +142,15 @@ function Settings() {
 
   const handleTogglePermission = async (roleId, permission) => {
     const role = roles.find(r => r.id === roleId);
-    const has = role.permissions.includes(permission);
+    const rolePermissions = role.permission_codes_read || role.permissions || [];
+    const has = rolePermissions.includes(permission);
     const newPermissions = has
-      ? role.permissions.filter(p => p !== permission)
-      : [...role.permissions, permission];
+      ? rolePermissions.filter(p => p !== permission)
+      : [...rolePermissions, permission];
 
     try {
       const res = await api.put(`settings/roles/${roleId}/`, {
-        ...role,
-        permissions: newPermissions,
+        permission_codes: newPermissions,
       });
       setRoles(roles.map(r => r.id === roleId ? res.data : r));
     } catch (err) {
@@ -189,17 +182,16 @@ function Settings() {
     }
   };
 
-  const handleSaveRFID = async () => {
+  const handleAssignRole = async (userId, nextRoleId) => {
     try {
-      await api.put("settings/rfid/", {
-        uid_length: uidLength,
-        max_cards_per_student: maxCardsPerStudent,
-        card_validity_days: cardValidityDays,
-        card_auto_disable: cardAutoDisable,
-      });
-      showMessage(" Paramètres RFID sauvegardés !");
+      const payload = {
+        role_id: nextRoleId === "" ? null : Number(nextRoleId),
+      };
+      const res = await api.put(`settings/users/${userId}/assign-role/`, payload);
+      setUsers(users.map((u) => (u.id === userId ? res.data : u)));
+      showMessage("✅ Rôle utilisateur mis à jour");
     } catch (err) {
-      showMessage(" Erreur sauvegarde RFID");
+      showMessage("❌ Erreur affectation du rôle");
     }
   };
 
@@ -232,20 +224,61 @@ function Settings() {
     }
   };
 
-  const allPermissions = [
-    "tout_accès",
-    "gestion_utilisateurs",
-    "paramètres",
-    "voir_pointages",
-    "voir_étudiants",
-    "gérer_cartes",
-    "voir_propre_pointage",
-  ];
+  const refreshRolesAndPermissions = async () => {
+    const [rolesRes, permissionsRes] = await Promise.all([
+      api.get("settings/roles/"),
+      api.get("settings/permissions/"),
+    ]);
+    setRoles(rolesRes.data);
+    setPermissions(permissionsRes.data);
+  };
+
+  const handleBootstrapDirectionRoles = async () => {
+    try {
+      await api.post("settings/roles/bootstrap-direction/");
+      await refreshRolesAndPermissions();
+      showMessage("✅ Rôles de la Direction initialisés");
+    } catch (err) {
+      showMessage("❌ Erreur lors de l'initialisation des rôles Direction");
+    }
+  };
+
+  const handleAddPermission = async () => {
+    if (!newPermission.code.trim() || !newPermission.label.trim()) {
+      showMessage("❌ Code et libellé de permission requis");
+      return;
+    }
+
+    try {
+      await api.post("settings/permissions/", {
+        code: newPermission.code.trim(),
+        label: newPermission.label.trim(),
+        module: newPermission.module.trim(),
+        active: true,
+      });
+      setNewPermission({ code: "", label: "", module: "" });
+      await refreshRolesAndPermissions();
+      showMessage("✅ Permission ajoutée");
+    } catch (err) {
+      showMessage("❌ Erreur ajout permission (code possiblement déjà utilisé)");
+    }
+  };
+
+  const handleTogglePermissionStatus = async (permission) => {
+    try {
+      await api.put(`settings/permissions/${permission.id}/`, {
+        active: !permission.active,
+      });
+      await refreshRolesAndPermissions();
+      showMessage("✅ Permission mise à jour");
+    } catch (err) {
+      showMessage("❌ Erreur mise à jour permission");
+    }
+  };
 
   const tabs = [
     { key: "general", label: " Info Générale" },
     { key: "users", label: " Utilisateurs & Rôles" },
-    { key: "rfid", label: " RFID / Cartes" },
     { key: "access", label: " Règles d'Accès" },
     { key: "notifications", label: " Notifications" },
   ];
@@ -260,7 +293,10 @@ function Settings() {
 
   return (
     <div>
-      <h1 style={{ color: "#1976d2", marginTop: 0 }}> Paramètres</h1>
+      <PageHeader
+        title="Paramètres"
+        subtitle="Configuration générale, gouvernance des accès et alertes système."
+      />
 
       {/* Message de confirmation */}
       {message && (
@@ -310,7 +346,7 @@ function Settings() {
 
       {/* ========== INFO GÉNÉRALE ========== */}
       {activeSection === "general" && (
-        <div style={sectionCard}>
+        <ContentCard padding="30px" style={sectionCard}>
           <h2 style={sectionTitle}> Information Générale</h2>
           <p style={sectionDesc}>Informations de l'établissement universitaire</p>
 
@@ -352,13 +388,13 @@ function Settings() {
           </div>
 
           <button onClick={handleSaveGeneral} style={btnSave}> Sauvegarder</button>
-        </div>
+        </ContentCard>
       )}
 
       {/* ========== UTILISATEURS & RÔLES ========== */}
       {activeSection === "users" && (
-        <div style={sectionCard}>
-          <h2 style={sectionTitle}>👥 Gestion des Utilisateurs & Rôles</h2>
+        <ContentCard padding="30px" style={sectionCard}>
+          <h2 style={sectionTitle}> Gestion des Utilisateurs & Rôles</h2>
           <p style={sectionDesc}>Gérer les rôles, permissions et accès des utilisateurs</p>
 
           <h3 style={subTitle}> Rôles & Permissions</h3>
@@ -367,6 +403,9 @@ function Settings() {
               onChange={(e) => setNewRoleName(e.target.value)}
               style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
             <button onClick={handleAddRole} style={btnPrimary}>+ Ajouter</button>
+            <button onClick={handleBootstrapDirectionRoles} style={{ ...btnPrimary, backgroundColor: "#6a1b9a" }}>
+              Initialiser Direction
+            </button>
           </div>
 
           {roles.map(role => (
@@ -386,21 +425,92 @@ function Settings() {
                 </button>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                {allPermissions.map(perm => (
-                  <label key={perm} style={{
+                {permissions.map(perm => {
+                  const rolePermissions = role.permission_codes_read || role.permissions || [];
+                  const isChecked = rolePermissions.includes(perm.code);
+                  return (
+                  <label key={perm.id} style={{
                     display: "flex", alignItems: "center", gap: "5px",
-                    backgroundColor: role.permissions.includes(perm) ? "#e3f2fd" : "#f5f5f5",
+                    backgroundColor: isChecked ? "#e3f2fd" : "#f5f5f5",
                     padding: "5px 10px", borderRadius: "20px", fontSize: "12px", cursor: "pointer",
-                    border: `1px solid ${role.permissions.includes(perm) ? "#90caf9" : "#e0e0e0"}`,
+                    border: `1px solid ${isChecked ? "#90caf9" : "#e0e0e0"}`,
                   }}>
-                    <input type="checkbox" checked={role.permissions.includes(perm)}
-                      onChange={() => handleTogglePermission(role.id, perm)} />
-                    {perm}
+                    <input type="checkbox" checked={isChecked}
+                      onChange={() => handleTogglePermission(role.id, perm.code)} />
+                    {perm.label}
                   </label>
-                ))}
+                );
+                })}
               </div>
             </div>
           ))}
+
+          <h3 style={{ ...subTitle, marginTop: "30px" }}> Catalogue des Permissions</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 1fr auto", gap: "10px", marginBottom: "15px" }}>
+            <input
+              type="text"
+              placeholder="Code (ex: view_reports)"
+              value={newPermission.code}
+              onChange={(e) => setNewPermission({ ...newPermission, code: e.target.value })}
+              style={inputStyle}
+            />
+            <input
+              type="text"
+              placeholder="Libellé"
+              value={newPermission.label}
+              onChange={(e) => setNewPermission({ ...newPermission, label: e.target.value })}
+              style={inputStyle}
+            />
+            <input
+              type="text"
+              placeholder="Module"
+              value={newPermission.module}
+              onChange={(e) => setNewPermission({ ...newPermission, module: e.target.value })}
+              style={inputStyle}
+            />
+            <button onClick={handleAddPermission} style={btnPrimary}>Ajouter</button>
+          </div>
+
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Code</th>
+                <th style={thStyle}>Libellé</th>
+                <th style={thStyle}>Module</th>
+                <th style={thStyle}>Statut</th>
+                <th style={thStyle}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {permissions.map((perm) => (
+                <tr key={perm.id}>
+                  <td style={tdStyle}><strong>{perm.code}</strong></td>
+                  <td style={tdStyle}>{perm.label}</td>
+                  <td style={tdStyle}>{perm.module || "-"}</td>
+                  <td style={tdStyle}>
+                    <span style={{
+                      backgroundColor: perm.active ? "#e8f5e9" : "#ffebee",
+                      color: perm.active ? "#2e7d32" : "#c62828",
+                      padding: "4px 12px",
+                      borderRadius: "20px",
+                      fontSize: "12px",
+                      fontWeight: "bold",
+                    }}>
+                      {perm.active ? "Actif" : "Inactif"}
+                    </span>
+                  </td>
+                  <td style={tdStyle}>
+                    <button
+                      onClick={() => handleTogglePermissionStatus(perm)}
+                      style={{ ...btnSmall, backgroundColor: perm.active ? "#ffcdd2" : "#c8e6c9", color: perm.active ? "#c62828" : "#2e7d32" }}
+                    >
+                      {perm.active ? "Désactiver" : "Activer"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
 
           <h3 style={{ ...subTitle, marginTop: "30px" }}> Utilisateurs</h3>
           <table style={tableStyle}>
@@ -417,9 +527,29 @@ function Settings() {
                 <tr key={user.id}>
                   <td style={tdStyle}><strong>{user.username}</strong></td>
                   <td style={tdStyle}>
-                    <span style={{ backgroundColor: "#e3f2fd", color: "#1976d2", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold" }}>
-                      {user.role}
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <span style={{ backgroundColor: "#e3f2fd", color: "#1976d2", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold" }}>
+                        {user.role}
+                      </span>
+                      <select
+                        value={user.role_id ?? ""}
+                        onChange={(e) => handleAssignRole(user.id, e.target.value)}
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: "6px",
+                          border: "1px solid #ddd",
+                          fontSize: "12px",
+                          backgroundColor: "#fff",
+                        }}
+                      >
+                        <option value="">Aucun rôle</option>
+                        {roles.filter((r) => r.active).map((role) => (
+                          <option key={role.id} value={role.id}>
+                            {role.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </td>
                   <td style={tdStyle}>
                     <span style={{
@@ -446,60 +576,12 @@ function Settings() {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-
-      {/* ========== RFID / CARTES ========== */}
-      {activeSection === "rfid" && (
-        <div style={sectionCard}>
-          <h2 style={sectionTitle}> Paramètres RFID / Cartes</h2>
-          <p style={sectionDesc}>Configuration des cartes RFID et de leur gestion</p>
-
-          <div style={fieldGroup}>
-            <label style={labelStyle}>Longueur UID attendue (caractères)</label>
-            <input type="number" value={uidLength} onChange={(e) => setUidLength(Number(e.target.value))}
-              min={4} max={20} style={inputStyle} />
-            <span style={helpText}>Nombre de caractères hexadécimaux (ex: 8 pour "A1B2C3D4")</span>
-          </div>
-
-          <div style={fieldGroup}>
-            <label style={labelStyle}>Nombre max de cartes par étudiant</label>
-            <input type="number" value={maxCardsPerStudent} onChange={(e) => setMaxCardsPerStudent(Number(e.target.value))}
-              min={1} max={5} style={inputStyle} />
-          </div>
-
-          <div style={fieldGroup}>
-            <label style={labelStyle}>Durée de validité des cartes (jours)</label>
-            <input type="number" value={cardValidityDays} onChange={(e) => setCardValidityDays(Number(e.target.value))}
-              min={30} max={1825} style={inputStyle} />
-          </div>
-
-          <div style={fieldGroup}>
-            <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: "10px" }}>
-              <input type="checkbox" checked={cardAutoDisable}
-                onChange={(e) => setCardAutoDisable(e.target.checked)}
-                style={{ width: "18px", height: "18px" }} />
-              Désactiver automatiquement les cartes expirées
-            </label>
-          </div>
-
-          <div style={{ backgroundColor: "#e3f2fd", borderRadius: "10px", padding: "15px", marginTop: "10px" }}>
-            <strong> Résumé :</strong>
-            <ul style={{ margin: "10px 0 0", paddingLeft: "20px", lineHeight: "1.8" }}>
-              <li>UID : <strong>{uidLength} caractères</strong></li>
-              <li>Max cartes/étudiant : <strong>{maxCardsPerStudent}</strong></li>
-              <li>Validité : <strong>{cardValidityDays} jours</strong> ({Math.round(cardValidityDays / 30)} mois)</li>
-              <li>Auto-désactivation : <strong>{cardAutoDisable ? "Oui " : "Non "}</strong></li>
-            </ul>
-          </div>
-
-          <button onClick={handleSaveRFID} style={btnSave}> Sauvegarder</button>
-        </div>
+        </ContentCard>
       )}
 
       {/* ========== RÈGLES D'ACCÈS ========== */}
       {activeSection === "access" && (
-        <div style={sectionCard}>
+        <ContentCard padding="30px" style={sectionCard}>
           <h2 style={sectionTitle}> Règles d'Accès</h2>
           <p style={sectionDesc}>Définir les horaires, retards et conditions d'accès</p>
 
@@ -542,12 +624,12 @@ function Settings() {
           </div>
 
           <button onClick={handleSaveAccess} style={btnSave}> Sauvegarder</button>
-        </div>
+        </ContentCard>
       )}
 
       {/* ========== NOTIFICATIONS ========== */}
       {activeSection === "notifications" && (
-        <div style={sectionCard}>
+        <ContentCard padding="30px" style={sectionCard}>
           <h2 style={sectionTitle}> Notifications & Alertes</h2>
           <p style={sectionDesc}>Configurer les alertes automatiques du système</p>
 
@@ -581,14 +663,14 @@ function Settings() {
           ))}
 
           <button onClick={handleSaveNotifications} style={btnSave}> Sauvegarder</button>
-        </div>
+        </ContentCard>
       )}
     </div>
   );
 }
 
 // ========== STYLES ==========
-const sectionCard = { backgroundColor: "white", borderRadius: "12px", boxShadow: "0 2px 10px rgba(0,0,0,0.1)", padding: "30px" };
+const sectionCard = { boxShadow: "0 2px 10px rgba(0,0,0,0.1)", borderRadius: "12px" };
 const sectionTitle = { color: "#1976d2", marginTop: 0, marginBottom: "5px" };
 const sectionDesc = { color: "#999", marginTop: 0, marginBottom: "25px", fontSize: "14px" };
 const subTitle = { color: "#333", fontSize: "16px", marginBottom: "15px", paddingBottom: "8px", borderBottom: "2px solid #e3f2fd" };

@@ -11,7 +11,7 @@ function Layout() {
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
       {/* Sidebar */}
       <div style={{
         width: "250px",
@@ -20,6 +20,10 @@ function Layout() {
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
+        height: "100vh",
+        position: "sticky",
+        top: 0,
+        flexShrink: 0,
       }}>
         <div>
           <div style={{
@@ -35,7 +39,7 @@ function Layout() {
 
           <nav style={{ marginTop: "20px" }}>
             <SideLink to="/" label="Dashboard" />
-            <SideLink to="/students" label="Étudiants" />
+            <SideLink to="/academics" label="Academique" />
             <SideLink to="/cards" label="Cartes RFID" />
             <SideLink to="/attendance" label="Présences" />
             <SideLink to="/settings"label="Paramètres" />
@@ -77,6 +81,7 @@ function Layout() {
         backgroundColor: "#f5f5f5",
         padding: "30px",
         overflowY: "auto",
+        minHeight: 0,
       }}>
         <Outlet />
       </div>
