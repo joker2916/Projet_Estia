@@ -11,6 +11,16 @@ export function getStudentPortal(token, params) {
   });
 }
 
+export function simulateStudentBadge(token) {
+  return api.post(
+    "student/rfid/simulate/",
+    {},
+    {
+      headers: { Authorization: `Student ${token}` },
+    },
+  );
+}
+
 export function loginProfessor(username, password) {
   return api.post("professor/login/", { username, password });
 }

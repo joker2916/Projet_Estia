@@ -13,6 +13,10 @@ function StudentLogin() {
     setError("");
     try {
       const res = await loginStudent(matricule, password);
+      localStorage.removeItem("token");
+      localStorage.removeItem("username");
+      localStorage.removeItem("professorToken");
+      localStorage.removeItem("professorName");
       localStorage.setItem("studentToken", res.data.token);
       localStorage.setItem("studentName", res.data.student_name);
       navigate("/student");
@@ -48,31 +52,104 @@ function StudentLogin() {
   );
 }
 
-export function AuthShell({ title, subtitle, children }) {
+export function AuthShell({ title, subtitle, children, onLogout }) {
+  const isLoginShell = !onLogout;
   return (
-    <div style={shellStyle}>
-      <div style={cardStyle}>
-        <h1 style={{ marginTop: 0, color: "#1976d2" }}>{title}</h1>
-        <p style={{ color: "#666" }}>{subtitle}</p>
-        {children}
+    <div style={{ ...shellStyle, ...(isLoginShell ? loginShellStyle : {}) }}>
+      <div style={{ ...pageStyle, ...(isLoginShell ? loginPageStyle : {}) }}>
+        <div style={headerRow}>
+          <div>
+            <h1 style={{ margin: "0 0 6px", color: "#1976d2" }}>{title}</h1>
+            {subtitle && <p style={{ margin: 0, color: "#666" }}>{subtitle}</p>}
+          </div>
+          {onLogout && (
+            <button type="button" onClick={onLogout} style={logoutStyle}>
+              Deconnexion
+            </button>
+          )}
+        </div>
+        <div style={contentStyle}>{children}</div>
       </div>
+    </div>
+  );
+}
+
+export function PeriodFilter({ filters, setFilters }) {
+  return (
+    <div style={filterStyle}>
+      <input
+        type="date"
+        value={filters.start_date}
+        onChange={(e) => setFilters({ ...filters, start_date: e.target.value })}
+        style={inputStyle}
+      />
+      <input
+        type="date"
+        value={filters.end_date}
+        onChange={(e) => setFilters({ ...filters, end_date: e.target.value })}
+        style={inputStyle}
+      />
+    </div>
+  );
+}
+
+export function Metric({ label, value }) {
+  return (
+    <div style={metricStyle}>
+      <span style={{ color: "#666", fontSize: "13px" }}>{label}</span>
+      <strong style={{ fontSize: "22px", color: "#1976d2" }}>{value}</strong>
     </div>
   );
 }
 
 const shellStyle = {
   minHeight: "100vh",
+  background: "linear-gradient(135deg, #1565c0, #42a5f5)",
+  padding: "28px",
+};
+const pageStyle = {
+  maxWidth: "980px",
+  margin: "0 auto",
+};
+const loginShellStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  background: "linear-gradient(135deg, #1565c0, #42a5f5)",
 };
-const cardStyle = {
-  width: "420px",
+const loginPageStyle = {
+  maxWidth: "420px",
+  width: "100%",
+};
+const headerRow = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: "16px",
+  marginBottom: "16px",
+  color: "white",
+};
+const logoutStyle = {
+  padding: "10px 14px",
+  border: "none",
+  borderRadius: "8px",
+  backgroundColor: "#c62828",
+  color: "white",
+  cursor: "pointer",
+  fontWeight: 600,
+};
+const contentStyle = {
   backgroundColor: "white",
   borderRadius: "14px",
-  padding: "32px",
+  padding: "24px",
   boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+};
+const filterStyle = { display: "flex", gap: "10px", marginBottom: "18px", flexWrap: "wrap" };
+const metricStyle = {
+  display: "grid",
+  gap: "6px",
+  padding: "14px",
+  borderRadius: "10px",
+  backgroundColor: "#f5f9ff",
 };
 const formStyle = { display: "grid", gap: "12px" };
 const inputStyle = {

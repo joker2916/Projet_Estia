@@ -21,6 +21,7 @@ from core.models import (
     StudentFinancialStatus,
     UserProfile,
 )
+from core.finance import mark_installment_paid, upsert_tuition_plan
 from core.views import ensure_default_permissions
 
 
@@ -88,12 +89,43 @@ class Command(BaseCommand):
         )
 
         students = [
-            ("ETSIA-001", "Jane", "Doe", "04A1B2C3", True, 0, "student123"),
-            ("ETSIA-002", "John", "Smith", "04D4E5F6", False, 120, "student123"),
+            ("ETSIA-001", "Jane", "Doe", "04A1B2C3", True, "student123"),
+            ("ETSIA-002", "John", "Smith", "04D4E5F6", False, "student123"),
         ]
 
+        upsert_tuition_plan(
+            promotion,
+            year,
+            [
+                {
+                    "installment_number": 1,
+                    "label": "Tranche 1",
+                    "amount": "300.00",
+                    "due_date": "2026-02-15",
+                },
+                {
+                    "installment_number": 2,
+                    "label": "Tranche 2",
+                    "amount": "300.00",
+                    "due_date": "2026-05-15",
+                },
+                {
+                    "installment_number": 3,
+                    "label": "Tranche 3",
+                    "amount": "300.00",
+                    "due_date": "2026-08-15",
+                },
+                {
+                    "installment_number": 4,
+                    "label": "Tranche 4",
+                    "amount": "300.00",
+                    "due_date": "2026-11-15",
+                },
+            ],
+        )
+
         created_cards = []
-        for matricule, first_name, last_name, uid, good_standing, balance_due, password in students:
+        for matricule, first_name, last_name, uid, good_standing, password in students:
             student, _ = Student.objects.update_or_create(
                 matricule=matricule,
                 defaults={
@@ -121,14 +153,9 @@ class Command(BaseCommand):
                     "ended_at": None,
                 },
             )
-            StudentFinancialStatus.objects.update_or_create(
-                student=student,
-                academic_year=year,
-                defaults={
-                    "is_in_good_standing": good_standing,
-                    "balance_due": balance_due,
-                },
-            )
+            if good_standing:
+                mark_installment_paid(enrollment, 1)
+                mark_installment_paid(enrollment, 2)
             card, _ = Card.objects.update_or_create(
                 uid=uid,
                 defaults={

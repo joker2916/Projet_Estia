@@ -62,11 +62,19 @@ ACCESS_MATRIX = {
     "promotion-detail": {"PUT": ("manage_academics", "manage_promotions")},
     "promotion-deactivate": {"POST": ("manage_academics", "manage_promotions")},
     "promotion-reactivate": {"POST": ("manage_academics", "manage_promotions")},
+    "promotion-tuition-plan": {
+        "GET": ("view_financial_status", "manage_financial_status"),
+        "PUT": ("manage_financial_status",),
+    },
     "enrollments": {
         "GET": ("view_academics", "manage_academics", "manage_students"),
         "POST": ("manage_academics", "manage_students"),
     },
     "student-transfer": {"POST": ("manage_academics", "manage_students")},
+    "enrollment-installments": {
+        "GET": ("view_financial_status", "manage_financial_status"),
+    },
+    "enrollment-installment-pay": {"PUT": ("manage_financial_status",)},
     "financial-statuses": {
         "GET": ("view_financial_status", "manage_financial_status"),
         "POST": ("manage_financial_status",),

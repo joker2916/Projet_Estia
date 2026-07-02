@@ -6,6 +6,7 @@ urlpatterns = [
     path('login/', views.login_view, name='login'),
     path('student/login/', views.student_login_view, name='student-login'),
     path('student/portal/', views.student_portal_view, name='student-portal'),
+    path('student/rfid/simulate/', views.student_rfid_simulate_view, name='student-rfid-simulate'),
     path('professor/login/', views.professor_login_view, name='professor-login'),
     path('professor/portal/', views.professor_portal_view, name='professor-portal'),
     path('professor/cpt/', views.professor_cpt_view, name='professor-cpt'),
@@ -56,8 +57,15 @@ urlpatterns = [
     path('promotions/<int:pk>/', views.promotion_detail_view, name='promotion-detail'),
     path('promotions/<int:pk>/deactivate/', views.promotion_deactivate_view, name='promotion-deactivate'),
     path('promotions/<int:pk>/reactivate/', views.promotion_reactivate_view, name='promotion-reactivate'),
+    path('promotions/<int:pk>/tuition-plan/', views.promotion_tuition_plan_view, name='promotion-tuition-plan'),
 
     path('enrollments/', views.enrollments_view, name='enrollments'),
+    path('enrollments/<int:pk>/installments/', views.enrollment_installments_view, name='enrollment-installments'),
+    path(
+        'enrollments/<int:pk>/installments/<int:installment_number>/',
+        views.enrollment_installment_pay_view,
+        name='enrollment-installment-pay',
+    ),
     path('students/<int:pk>/transfer/', views.student_transfer_view, name='student-transfer'),
 
     path('financial-statuses/', views.financial_statuses_view, name='financial-statuses'),

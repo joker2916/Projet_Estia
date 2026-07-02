@@ -22,10 +22,13 @@ from .models import (
     Permission,
     ProfessorProfile,
     Promotion,
+    PromotionTuitionPlan,
     RFIDSettings,
     Role,
     Student,
     StudentFinancialStatus,
+    StudentInstallmentPayment,
+    TuitionInstallment,
     UniversityInfo,
     UserProfile,
 )
@@ -86,5 +89,8 @@ admin.site.register(NotificationSettings)
 admin.site.register(Student)
 admin.site.register(Enrollment)
 admin.site.register(StudentFinancialStatus)
+admin.site.register(PromotionTuitionPlan)
+admin.site.register(TuitionInstallment)
+admin.site.register(StudentInstallmentPayment)
 admin.site.register(Card)
 admin.site.register(AccessEvent)

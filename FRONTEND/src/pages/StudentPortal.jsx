@@ -1,40 +1,54 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { getStudentPortal } from "../api/portals";
+import BadgeSimulator from "../components/BadgeSimulator";
+import { StudentEvolutionCharts } from "../components/EvolutionCharts";
+import { AuthShell, PeriodFilter, Metric } from "./StudentLogin";
 
 function StudentPortal() {
   const token = localStorage.getItem("studentToken");
+  const studentName = localStorage.getItem("studentName") || "Etudiant";
   const navigate = useNavigate();
   const [filters, setFilters] = useState({ start_date: "", end_date: "" });
   const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const loadReport = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    try {
+      const res = await getStudentPortal(token, {
+        start_date: filters.start_date || undefined,
+        end_date: filters.end_date || undefined,
+      });
+      setReport(res.data);
+      setError("");
+    } catch (err) {
+      const status = err.response?.status;
+      if (status === 401 || status === 403) {
+        localStorage.removeItem("studentToken");
+        localStorage.removeItem("studentName");
+        navigate("/student/login");
+        return;
+      }
+      setError("Impossible de charger votre espace etudiant.");
+    } finally {
+      setLoading(false);
+    }
+  }, [token, filters.start_date, filters.end_date, navigate]);
+
+  useEffect(() => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("username");
+    localStorage.removeItem("professorToken");
+    localStorage.removeItem("professorName");
+  }, []);
 
   useEffect(() => {
     if (!token) return;
-    let ignore = false;
-
-    const loadReport = async () => {
-      try {
-        const res = await getStudentPortal(token, {
-          start_date: filters.start_date || undefined,
-          end_date: filters.end_date || undefined,
-        });
-        if (!ignore) {
-          setReport(res.data);
-          setError("");
-        }
-      } catch {
-        if (!ignore) {
-          setError("Impossible de charger le rapport étudiant.");
-        }
-      }
-    };
-
     loadReport();
-    return () => {
-      ignore = true;
-    };
-  }, [token, filters.start_date, filters.end_date]);
+  }, [token, loadReport]);
 
   if (!token) return <Navigate to="/student/login" />;
 
@@ -44,141 +58,162 @@ function StudentPortal() {
     navigate("/student/login");
   };
 
+  const studentNode = report
+    ? {
+        enrollment_id: report.enrollment?.id,
+        student: report.student,
+        attendance: report.attendance,
+        cpt: report.cpt,
+      }
+    : null;
+
+  const financial = report?.financial;
+  const installments = financial?.installments || [];
+
   return (
-    <PortalShell title="Espace Étudiant" onLogout={logout}>
+    <AuthShell title="Espace Etudiant" subtitle={`Bonjour ${studentName}`} onLogout={logout}>
       <PeriodFilter filters={filters} setFilters={setFilters} />
-      {error && <p style={{ color: "#c62828" }}>{error}</p>}
+
+      {loading && <p style={mutedText}>Chargement...</p>}
+      {error && <p style={errorText}>{error}</p>}
+
       {report && (
         <>
-          <h2>{report.student.name}</h2>
-          <p>
-            {report.enrollment.faculty} / {report.enrollment.promotion} /{" "}
-            {report.enrollment.academic_year}
-          </p>
-          <p style={{ color: "#666", marginBottom: "16px" }}>
-            Periode de validite : {report.enrollment.valid_from} →{" "}
-            {report.enrollment.valid_to}
-          </p>
-          <div style={gridStyle}>
-            <Metric label="Solde" value={`${report.financial.balance_due} USD`} />
-            <Metric label="Jours attendus" value={report.summary.expected_days} />
-            <Metric label="Présences" value={report.summary.present_days} />
-            <Metric label="Retards" value={report.summary.late_count} />
-            <Metric label="Absences" value={report.summary.absence_count} />
-          </div>
-          <h3>Absences</h3>
-          <p>{report.absent_dates.length ? report.absent_dates.join(", ") : "Aucune absence sur la période."}</p>
-          <EventsTable events={report.events} />
+          <section style={headerBlock}>
+            <h2 style={{ margin: "0 0 6px" }}>{report.student.name}</h2>
+            <p style={mutedText}>
+              {report.enrollment.faculty} / {report.enrollment.promotion} /{" "}
+              {report.enrollment.academic_year}
+            </p>
+            <p style={mutedText}>
+              Validite : {report.enrollment.valid_from} → {report.enrollment.valid_to}
+            </p>
+          </section>
+
+          <section style={financeSection}>
+            <div style={financeHeader}>
+              <h3 style={sectionTitle}>Scolarite</h3>
+              <span
+                style={{
+                  ...standingBadge,
+                  backgroundColor: financial?.is_in_good_standing ? "#e8f5e9" : "#ffebee",
+                  color: financial?.is_in_good_standing ? "#1b5e20" : "#b71c1c",
+                }}
+              >
+                {financial?.is_in_good_standing ? "En regle" : "Impaye / en retard"}
+              </span>
+            </div>
+            <div style={gridStyle}>
+              <Metric label="Solde restant" value={`${financial?.balance_due || 0} USD`} />
+              <Metric label="Total paye" value={`${financial?.total_paid || 0} USD`} />
+              <Metric label="Total du" value={`${financial?.total_due || 0} USD`} />
+            </div>
+            {installments.length > 0 ? (
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Tranche</th>
+                    <th style={thStyle}>Montant</th>
+                    <th style={thStyle}>Echeance</th>
+                    <th style={thStyle}>Statut</th>
+                    <th style={thStyle}>Paye le</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {installments.map((item) => (
+                    <tr key={item.installment_number}>
+                      <td style={tdStyle}>{item.label}</td>
+                      <td style={tdStyle}>{item.amount} USD</td>
+                      <td style={tdStyle}>{item.due_date}</td>
+                      <td style={tdStyle}>{formatInstallmentStatus(item.status)}</td>
+                      <td style={tdStyle}>
+                        {item.paid_at
+                          ? new Date(item.paid_at).toLocaleDateString()
+                          : "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p style={mutedText}>Barème de scolarité non défini pour votre promotion.</p>
+            )}
+          </section>
+
+          {studentNode && <StudentEvolutionCharts studentNode={studentNode} />}
+
+          <section style={attendanceSection}>
+            <h3 style={sectionTitle}>Assiduite</h3>
+            <div style={gridStyle}>
+              <Metric label="Jours attendus" value={report.attendance.summary.expected_days} />
+              <Metric label="Presences" value={report.attendance.summary.present_days} />
+              <Metric label="Retards" value={report.attendance.summary.late_count} />
+              <Metric label="Absences" value={report.attendance.summary.absence_count} />
+              <Metric label="CPT" value={report.cpt.balance} />
+            </div>
+            <p style={mutedText}>
+              Periode : {report.attendance.period.start} → {report.attendance.period.end}
+            </p>
+            <p style={mutedText}>
+              Jours absents :{" "}
+              {report.attendance.absent_dates.length
+                ? report.attendance.absent_dates.join(", ")
+                : "Aucun"}
+            </p>
+          </section>
+
+          <BadgeSimulator
+            token={token}
+            cardUid={report.card?.uid}
+            studentName={report.student.name}
+            onScanComplete={loadReport}
+          />
         </>
       )}
-    </PortalShell>
+    </AuthShell>
   );
 }
 
-export function PortalShell({ title, children, onLogout }) {
-  return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "28px" }}>
-      <div style={headerStyle}>
-        <h1>{title}</h1>
-        <button onClick={onLogout} style={logoutStyle}>
-          Déconnexion
-        </button>
-      </div>
-      <div style={contentStyle}>{children}</div>
-    </div>
-  );
+function formatInstallmentStatus(status) {
+  if (status === "paid") return "Payee";
+  if (status === "overdue") return "En retard";
+  return "En attente";
 }
 
-export function PeriodFilter({ filters, setFilters }) {
-  return (
-    <div style={filterStyle}>
-      <input
-        type="date"
-        value={filters.start_date}
-        onChange={(e) => setFilters({ ...filters, start_date: e.target.value })}
-        style={inputStyle}
-      />
-      <input
-        type="date"
-        value={filters.end_date}
-        onChange={(e) => setFilters({ ...filters, end_date: e.target.value })}
-        style={inputStyle}
-      />
-    </div>
-  );
-}
-
-export function Metric({ label, value }) {
-  return (
-    <div style={metricStyle}>
-      <span style={{ color: "#666" }}>{label}</span>
-      <strong style={{ fontSize: "24px", color: "#1976d2" }}>{value}</strong>
-    </div>
-  );
-}
-
-export function EventsTable({ events }) {
-  return (
-    <table style={tableStyle}>
-      <thead>
-        <tr>
-          <th style={thStyle}>Date</th>
-          <th style={thStyle}>Résultat</th>
-          <th style={thStyle}>Motif</th>
-          <th style={thStyle}>UID</th>
-        </tr>
-      </thead>
-      <tbody>
-        {events.map((event) => (
-          <tr key={event.id}>
-            <td style={tdStyle}>{new Date(event.created_at).toLocaleString()}</td>
-            <td style={tdStyle}>{event.result}</td>
-            <td style={tdStyle}>{event.reason}</td>
-            <td style={tdStyle}>{event.uid || "-"}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-const headerStyle = {
+const headerBlock = { marginBottom: "20px" };
+const financeSection = {
+  marginBottom: "20px",
+  padding: "16px",
+  borderRadius: "12px",
+  backgroundColor: "#fffbea",
+  border: "1px solid #ffe082",
+};
+const financeHeader = {
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
-  marginBottom: "20px",
+  gap: "10px",
+  flexWrap: "wrap",
+  marginBottom: "12px",
 };
-const logoutStyle = {
-  padding: "10px 14px",
-  border: "none",
-  borderRadius: "8px",
-  backgroundColor: "#c62828",
-  color: "white",
-  cursor: "pointer",
+const sectionTitle = { margin: 0, color: "#1a237e" };
+const standingBadge = {
+  padding: "6px 12px",
+  borderRadius: "999px",
+  fontSize: "13px",
+  fontWeight: 600,
 };
-const contentStyle = {
-  backgroundColor: "white",
-  borderRadius: "14px",
-  padding: "24px",
-  boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
-};
-const filterStyle = { display: "flex", gap: "10px", marginBottom: "18px" };
-const inputStyle = { padding: "10px", border: "1px solid #ccc", borderRadius: "6px" };
+const attendanceSection = { marginBottom: "8px" };
 const gridStyle = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
   gap: "12px",
-  margin: "20px 0",
+  margin: "12px 0",
 };
-const metricStyle = {
-  display: "grid",
-  gap: "8px",
-  padding: "16px",
-  borderRadius: "10px",
-  backgroundColor: "#f5f9ff",
-};
-const tableStyle = { width: "100%", borderCollapse: "collapse", marginTop: "12px" };
-const thStyle = { textAlign: "left", padding: "10px", backgroundColor: "#f5f5f5" };
-const tdStyle = { padding: "10px", borderBottom: "1px solid #eee" };
+const tableStyle = { width: "100%", borderCollapse: "collapse", marginTop: "8px" };
+const thStyle = { textAlign: "left", padding: "10px", backgroundColor: "#fff8e1" };
+const tdStyle = { padding: "10px", borderBottom: "1px solid #f0e6c8" };
+const mutedText = { color: "#666" };
+const errorText = { color: "#c62828" };
 
 export default StudentPortal;

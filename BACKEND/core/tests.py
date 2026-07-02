@@ -18,6 +18,7 @@ from .models import (
     Student,
     StudentFinancialStatus,
 )
+from .finance import ensure_student_installments, upsert_tuition_plan
 from .rfid import process_rfid_scan
 
 
@@ -103,12 +104,37 @@ class RFIDDecisionTests(TestCase):
         self.assertEqual(AccessEvent.objects.count(), 1)
 
     def test_unpaid_fees_are_denied_when_rule_is_enabled(self):
-        StudentFinancialStatus.objects.create(
-            student=self.student,
-            academic_year=self.year,
-            is_in_good_standing=False,
-            balance_due=100,
+        upsert_tuition_plan(
+            self.promotion,
+            self.year,
+            [
+                {
+                    "installment_number": 1,
+                    "label": "Tranche 1",
+                    "amount": "100.00",
+                    "due_date": "2020-01-01",
+                },
+                {
+                    "installment_number": 2,
+                    "label": "Tranche 2",
+                    "amount": "100.00",
+                    "due_date": "2020-04-01",
+                },
+                {
+                    "installment_number": 3,
+                    "label": "Tranche 3",
+                    "amount": "100.00",
+                    "due_date": "2020-07-01",
+                },
+                {
+                    "installment_number": 4,
+                    "label": "Tranche 4",
+                    "amount": "100.00",
+                    "due_date": "2020-10-01",
+                },
+            ],
         )
+        ensure_student_installments(self.enrollment)
 
         scan = process_rfid_scan(self.card.uid, source="gate-1", request_id="req-3")
 
@@ -315,6 +341,109 @@ class MVPBusinessRulesTests(TestCase):
         )
         self.assertEqual(report.status_code, 200)
         self.assertEqual(report.data["student"]["matricule"], self.student.matricule)
+        self.assertIn("attendance", report.data)
+        self.assertIn("timeline", report.data["attendance"])
+        self.assertIn("cpt", report.data)
+        self.assertIn("financial", report.data)
+        self.assertIn("installments", report.data["financial"])
+        self.assertNotIn("events", report.data)
+
+    def test_student_portal_simulation_creates_admin_visible_event(self):
+        upsert_tuition_plan(
+            self.promotion,
+            self.year,
+            [
+                {
+                    "installment_number": 1,
+                    "label": "Tranche 1",
+                    "amount": "100.00",
+                    "due_date": "2026-12-31",
+                },
+                {
+                    "installment_number": 2,
+                    "label": "Tranche 2",
+                    "amount": "100.00",
+                    "due_date": "2026-12-31",
+                },
+                {
+                    "installment_number": 3,
+                    "label": "Tranche 3",
+                    "amount": "100.00",
+                    "due_date": "2026-12-31",
+                },
+                {
+                    "installment_number": 4,
+                    "label": "Tranche 4",
+                    "amount": "100.00",
+                    "due_date": "2026-12-31",
+                },
+            ],
+        )
+        ensure_student_installments(self.enrollment)
+
+        public_client = APIClient()
+        login = public_client.post(
+            "/api/student/login/",
+            {"matricule": self.student.matricule, "password": "student123"},
+            format="json",
+        )
+        simulate = public_client.post(
+            "/api/student/rfid/simulate/",
+            {},
+            HTTP_AUTHORIZATION=f"Student {login.data['token']}",
+            format="json",
+        )
+        self.assertIn(simulate.status_code, [200, 201])
+        self.assertIn("allowed", simulate.data)
+
+        admin_events = self.client.get("/api/access-events/")
+        self.assertEqual(admin_events.status_code, 200)
+        payload = admin_events.data
+        events = payload.get("results") if isinstance(payload, dict) else payload
+        sources = [event.get("source") for event in events]
+        self.assertIn("student-portal", sources)
+
+    def test_marking_installment_paid_updates_balance(self):
+        upsert_tuition_plan(
+            self.promotion,
+            self.year,
+            [
+                {
+                    "installment_number": 1,
+                    "label": "Tranche 1",
+                    "amount": "150.00",
+                    "due_date": "2026-12-31",
+                },
+                {
+                    "installment_number": 2,
+                    "label": "Tranche 2",
+                    "amount": "150.00",
+                    "due_date": "2026-12-31",
+                },
+                {
+                    "installment_number": 3,
+                    "label": "Tranche 3",
+                    "amount": "150.00",
+                    "due_date": "2026-12-31",
+                },
+                {
+                    "installment_number": 4,
+                    "label": "Tranche 4",
+                    "amount": "150.00",
+                    "due_date": "2026-12-31",
+                },
+            ],
+        )
+        ensure_student_installments(self.enrollment)
+
+        response = self.client.put(
+            f"/api/enrollments/{self.enrollment.id}/installments/1/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["financial"]["total_paid"], "150.00")
+        self.assertEqual(response.data["financial"]["balance_due"], "450.00")
 
     def test_professor_sees_only_assigned_promotions(self):
         professor = User.objects.create_user("prof.info", password="prof123")

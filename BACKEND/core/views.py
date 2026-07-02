@@ -12,6 +12,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 import json
+from decimal import Decimal
 
 from .models import (
     UniversityInfo, Role, Permission, UserProfile, ProfessorProfile,
@@ -40,6 +41,13 @@ from .cpt import (
     build_cpt_weekly_timeline,
     professor_can_manage_enrollment,
     record_cpt_entry,
+)
+from .finance import (
+    build_student_financial_report,
+    ensure_student_installments,
+    mark_installment_paid,
+    sync_financial_status,
+    upsert_tuition_plan,
 )
 from .ldap_auth import authenticate_professor, authenticate_student
 from .permissions import HasRolePermission as IsAuthenticated
@@ -235,12 +243,56 @@ def student_portal_view(request):
     enrollment = active_enrollment_for_student(student)
     if not enrollment:
         return Response({'error': 'Aucune inscription active'}, status=404)
-    report = build_attendance_report(
-        enrollment,
-        request.query_params.get('start_date'),
-        request.query_params.get('end_date'),
-    )
-    return Response(report)
+
+    start_date = request.query_params.get('start_date')
+    end_date = request.query_params.get('end_date')
+    report = build_attendance_report(enrollment, start_date, end_date)
+    card = Card.objects.filter(enrollment=enrollment, status=Card.STATUS_ACTIVE).first()
+
+    return Response({
+        'student': report['student'],
+        'enrollment': report['enrollment'],
+        'attendance': {
+            'period': report['period'],
+            'summary': report['summary'],
+            'absent_dates': report['absent_dates'],
+            'timeline': build_attendance_timeline(enrollment, start_date, end_date),
+        },
+        'cpt': {
+            **build_cpt_summary(enrollment),
+            'timeline': build_cpt_timeline(enrollment, start_date, end_date),
+            'weekly_timeline': build_cpt_weekly_timeline(enrollment, start_date, end_date),
+        },
+        'financial': build_student_financial_report(enrollment),
+        'card': {
+            'uid': card.uid if card else None,
+            'status': card.status if card else None,
+        },
+    })
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def student_rfid_simulate_view(request):
+    student = _student_from_request(request)
+    if not student:
+        return Response({'error': 'Token étudiant invalide'}, status=401)
+    enrollment = active_enrollment_for_student(student)
+    if not enrollment:
+        return Response({'error': 'Aucune inscription active'}, status=404)
+
+    card = Card.objects.filter(enrollment=enrollment, status=Card.STATUS_ACTIVE).first()
+    if not card:
+        return Response({'error': 'Aucune carte RFID active'}, status=400)
+
+    request_id = request.data.get('request_id') or f"student-portal-{timezone.now().timestamp()}"
+    scan = process_rfid_scan(uid=card.uid, source='student-portal', request_id=request_id)
+    return Response({
+        'allowed': scan['allowed'],
+        'result': scan['result'],
+        'reason': scan['reason'],
+        'message': scan['message'],
+    }, status=200 if scan.get('duplicate') else 201)
 
 
 @api_view(['POST'])
@@ -984,6 +1036,8 @@ def enrollments_view(request):
             promotion=enrollment.promotion,
             academic_year=enrollment.academic_year,
         )
+        ensure_student_installments(enrollment)
+        sync_financial_status(enrollment)
         return Response(EnrollmentSerializer(enrollment).data, status=201)
     return Response(serializer.errors, status=400)
 
@@ -1085,6 +1139,122 @@ def financial_status_detail_view(request, pk):
         serializer.save()
         return Response(serializer.data)
     return Response(serializer.errors, status=400)
+
+
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated])
+def promotion_tuition_plan_view(request, pk):
+    try:
+        promotion = Promotion.objects.get(pk=pk)
+    except Promotion.DoesNotExist:
+        return Response({'error': 'Promotion introuvable'}, status=404)
+
+    academic_year_id = request.query_params.get('academic_year_id') or request.data.get('academic_year_id')
+    if not academic_year_id:
+        return Response({'error': 'academic_year_id requis'}, status=400)
+
+    try:
+        academic_year = AcademicYear.objects.get(pk=academic_year_id)
+    except AcademicYear.DoesNotExist:
+        return Response({'error': 'Annee academique introuvable'}, status=404)
+
+    if request.method == 'GET':
+        from .finance import get_tuition_plan
+
+        plan = get_tuition_plan(
+            Enrollment(promotion=promotion, academic_year=academic_year)
+        )
+        if not plan:
+            return Response({
+                'promotion_id': promotion.id,
+                'academic_year_id': academic_year.id,
+                'installments': [],
+            })
+        return Response({
+            'promotion_id': promotion.id,
+            'academic_year_id': academic_year.id,
+            'installments': [
+                {
+                    'installment_number': item.installment_number,
+                    'label': item.label,
+                    'amount': str(item.amount),
+                    'due_date': item.due_date.isoformat(),
+                }
+                for item in plan.installments.all()
+            ],
+        })
+
+    installments = request.data.get('installments', [])
+    try:
+        plan, created_items = upsert_tuition_plan(promotion, academic_year, installments)
+    except ValueError as exc:
+        return Response({'error': str(exc)}, status=400)
+
+    log_admin_action(request, 'upsert_tuition_plan', plan)
+    return Response({
+        'promotion_id': promotion.id,
+        'academic_year_id': academic_year.id,
+        'installments': [
+            {
+                'installment_number': item.installment_number,
+                'label': item.label,
+                'amount': str(item.amount),
+                'due_date': item.due_date.isoformat(),
+            }
+            for item in created_items
+        ],
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def enrollment_installments_view(request, pk):
+    try:
+        enrollment = Enrollment.objects.select_related('student', 'promotion', 'academic_year').get(pk=pk)
+    except Enrollment.DoesNotExist:
+        return Response({'error': 'Inscription introuvable'}, status=404)
+
+    return Response({
+        'enrollment_id': enrollment.id,
+        'student_name': f"{enrollment.student.first_name} {enrollment.student.last_name}",
+        'student_matricule': enrollment.student.matricule,
+        'financial': build_student_financial_report(enrollment),
+    })
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def enrollment_installment_pay_view(request, pk, installment_number):
+    try:
+        enrollment = Enrollment.objects.get(pk=pk)
+    except Enrollment.DoesNotExist:
+        return Response({'error': 'Inscription introuvable'}, status=404)
+
+    try:
+        installment_number = int(installment_number)
+    except (TypeError, ValueError):
+        return Response({'error': 'Numero de tranche invalide'}, status=400)
+
+    amount_paid = request.data.get('amount_paid')
+    try:
+        mark_installment_paid(
+            enrollment,
+            installment_number,
+            amount_paid=Decimal(str(amount_paid)) if amount_paid is not None else None,
+        )
+    except ValueError as exc:
+        return Response({'error': str(exc)}, status=400)
+
+    log_admin_action(
+        request,
+        'mark_installment_paid',
+        enrollment,
+        {'installment_number': installment_number},
+    )
+    return Response({
+        'enrollment_id': enrollment.id,
+        'financial': build_student_financial_report(enrollment),
+    })
 
 # ========== ÉTUDIANTS ==========
 @api_view(['GET', 'POST'])

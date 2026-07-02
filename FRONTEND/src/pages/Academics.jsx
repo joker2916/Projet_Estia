@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import api from "../api/axios";
 import Students from "./Students";
 import PageHeader from "../components/PageHeader";
@@ -37,6 +37,12 @@ function Academics() {
     academic_year: "",
     is_active: true,
   });
+  const [tuitionPromotionId, setTuitionPromotionId] = useState("");
+  const [tuitionYearId, setTuitionYearId] = useState("");
+  const [tuitionInstallments, setTuitionInstallments] = useState(defaultInstallments());
+  const [tuitionMessage, setTuitionMessage] = useState("");
+  const [expandedEnrollmentId, setExpandedEnrollmentId] = useState(null);
+  const [enrollmentFinance, setEnrollmentFinance] = useState(null);
 
   const fetchFaculties = async () => {
     const res = await api.get("faculties/", { params: { status: "all" } });
@@ -159,6 +165,54 @@ function Academics() {
     });
     fetchEnrollments();
     fetchStudents();
+  };
+
+  const loadTuitionPlan = async (promotionId, yearId) => {
+    if (!promotionId || !yearId) return;
+    const res = await api.get(`promotions/${promotionId}/tuition-plan/`, {
+      params: { academic_year_id: yearId },
+    });
+    const rows = res.data.installments?.length
+      ? res.data.installments
+      : defaultInstallments();
+    setTuitionInstallments(
+      rows.map((item) => ({
+        installment_number: item.installment_number,
+        label: item.label || `Tranche ${item.installment_number}`,
+        amount: item.amount || "",
+        due_date: item.due_date || "",
+      })),
+    );
+  };
+
+  const handleSaveTuitionPlan = async (e) => {
+    e.preventDefault();
+    if (!tuitionPromotionId || !tuitionYearId) return;
+    await api.put(`promotions/${tuitionPromotionId}/tuition-plan/`, {
+      academic_year_id: Number(tuitionYearId),
+      installments: tuitionInstallments,
+    });
+    setTuitionMessage("Barème enregistré.");
+  };
+
+  const handleShowEnrollmentFinance = async (enrollmentId) => {
+    if (expandedEnrollmentId === enrollmentId) {
+      setExpandedEnrollmentId(null);
+      setEnrollmentFinance(null);
+      return;
+    }
+    const res = await api.get(`enrollments/${enrollmentId}/installments/`);
+    setExpandedEnrollmentId(enrollmentId);
+    setEnrollmentFinance(res.data.financial);
+  };
+
+  const handleMarkInstallmentPaid = async (enrollmentId, installmentNumber) => {
+    await api.put(
+      `enrollments/${enrollmentId}/installments/${installmentNumber}/`,
+      {},
+    );
+    const res = await api.get(`enrollments/${enrollmentId}/installments/`);
+    setEnrollmentFinance(res.data.financial);
   };
 
   return (
@@ -471,6 +525,89 @@ function Academics() {
               ))}
             </tbody>
           </table>
+
+          <div style={tuitionPanel}>
+            <h3 style={{ marginTop: 0 }}>Frais de scolarite (4 tranches)</h3>
+            <div style={formGrid3}>
+              <select
+                value={tuitionPromotionId}
+                onChange={(e) => {
+                  setTuitionPromotionId(e.target.value);
+                  loadTuitionPlan(e.target.value, tuitionYearId);
+                }}
+                style={inputStyle}
+              >
+                <option value="">-- Promotion --</option>
+                {promotions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={tuitionYearId}
+                onChange={(e) => {
+                  setTuitionYearId(e.target.value);
+                  loadTuitionPlan(tuitionPromotionId, e.target.value);
+                }}
+                style={inputStyle}
+              >
+                <option value="">-- Annee academique --</option>
+                {years.map((y) => (
+                  <option key={y.id} value={y.id}>
+                    {y.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {tuitionInstallments.map((item, index) => (
+              <div key={item.installment_number} style={installmentRow}>
+                <strong>Tranche {item.installment_number}</strong>
+                <input
+                  placeholder="Libelle"
+                  value={item.label}
+                  onChange={(e) => {
+                    const next = [...tuitionInstallments];
+                    next[index] = { ...next[index], label: e.target.value };
+                    setTuitionInstallments(next);
+                  }}
+                  style={inputStyle}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Montant"
+                  value={item.amount}
+                  onChange={(e) => {
+                    const next = [...tuitionInstallments];
+                    next[index] = { ...next[index], amount: e.target.value };
+                    setTuitionInstallments(next);
+                  }}
+                  style={inputStyle}
+                />
+                <input
+                  type="date"
+                  value={item.due_date}
+                  onChange={(e) => {
+                    const next = [...tuitionInstallments];
+                    next[index] = { ...next[index], due_date: e.target.value };
+                    setTuitionInstallments(next);
+                  }}
+                  style={inputStyle}
+                />
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={handleSaveTuitionPlan}
+              style={{ ...primaryBtn, marginTop: "12px" }}
+              disabled={!tuitionPromotionId || !tuitionYearId}
+            >
+              Enregistrer le barème
+            </button>
+            {tuitionMessage && <p style={hintStyle}>{tuitionMessage}</p>}
+          </div>
         </Section>
       )}
 
@@ -592,20 +729,80 @@ function Academics() {
                 <th style={thStyle}>Validite fin</th>
                 <th style={thStyle}>En periode</th>
                 <th style={thStyle}>Statut</th>
+                <th style={thStyle}>Paiements</th>
               </tr>
             </thead>
             <tbody>
               {enrollments.map((e) => (
-                <tr key={e.id}>
-                  <td style={tdStyle}>{e.student_name}</td>
-                  <td style={tdStyle}>{e.faculty_name}</td>
-                  <td style={tdStyle}>{e.promotion_name}</td>
-                  <td style={tdStyle}>{e.academic_year_name}</td>
-                  <td style={tdStyle}>{e.valid_from || "-"}</td>
-                  <td style={tdStyle}>{e.valid_to || "-"}</td>
-                  <td style={tdStyle}>{e.is_within_validity ? "Oui" : "Non"}</td>
-                  <td style={tdStyle}>{e.is_active ? "Active" : "Terminee"}</td>
-                </tr>
+                <Fragment key={e.id}>
+                  <tr>
+                    <td style={tdStyle}>{e.student_name}</td>
+                    <td style={tdStyle}>{e.faculty_name}</td>
+                    <td style={tdStyle}>{e.promotion_name}</td>
+                    <td style={tdStyle}>{e.academic_year_name}</td>
+                    <td style={tdStyle}>{e.valid_from || "-"}</td>
+                    <td style={tdStyle}>{e.valid_to || "-"}</td>
+                    <td style={tdStyle}>{e.is_within_validity ? "Oui" : "Non"}</td>
+                    <td style={tdStyle}>{e.is_active ? "Active" : "Terminee"}</td>
+                    <td style={tdStyle}>
+                      <button
+                        type="button"
+                        style={primaryBtn}
+                        onClick={() => handleShowEnrollmentFinance(e.id)}
+                      >
+                        {expandedEnrollmentId === e.id ? "Masquer" : "Voir"}
+                      </button>
+                    </td>
+                  </tr>
+                  {expandedEnrollmentId === e.id && enrollmentFinance && (
+                    <tr key={`${e.id}-finance`}>
+                      <td colSpan={9} style={financeCell}>
+                        <p>
+                          Solde : <strong>{enrollmentFinance.balance_due} USD</strong> ·
+                          Paye : {enrollmentFinance.total_paid} USD ·{" "}
+                          {enrollmentFinance.is_in_good_standing ? "En regle" : "En retard"}
+                        </p>
+                        <table style={tableStyle}>
+                          <thead>
+                            <tr>
+                              <th style={thStyle}>Tranche</th>
+                              <th style={thStyle}>Montant</th>
+                              <th style={thStyle}>Echeance</th>
+                              <th style={thStyle}>Statut</th>
+                              <th style={thStyle}>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(enrollmentFinance.installments || []).map((item) => (
+                              <tr key={item.installment_number}>
+                                <td style={tdStyle}>{item.label}</td>
+                                <td style={tdStyle}>{item.amount} USD</td>
+                                <td style={tdStyle}>{item.due_date}</td>
+                                <td style={tdStyle}>{item.status}</td>
+                                <td style={tdStyle}>
+                                  {item.status !== "paid" && (
+                                    <button
+                                      type="button"
+                                      style={successBtn}
+                                      onClick={() =>
+                                        handleMarkInstallmentPaid(
+                                          e.id,
+                                          item.installment_number,
+                                        )
+                                      }
+                                    >
+                                      Marquer paye
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -753,6 +950,37 @@ const checkboxLabel = {
   alignItems: "center",
   fontSize: "14px",
   color: "#333",
+};
+
+function defaultInstallments() {
+  return [1, 2, 3, 4].map((number) => ({
+    installment_number: number,
+    label: `Tranche ${number}`,
+    amount: "",
+    due_date: "",
+  }));
+}
+
+const tuitionPanel = {
+  marginTop: "24px",
+  padding: "16px",
+  borderRadius: "10px",
+  backgroundColor: "#fffbea",
+  border: "1px solid #ffe082",
+};
+
+const installmentRow = {
+  display: "grid",
+  gridTemplateColumns: "100px 1fr 140px 160px",
+  gap: "10px",
+  alignItems: "center",
+  marginBottom: "8px",
+};
+
+const financeCell = {
+  padding: "14px",
+  backgroundColor: "#fafbfd",
+  borderBottom: "1px solid #eee",
 };
 
 export default Academics;

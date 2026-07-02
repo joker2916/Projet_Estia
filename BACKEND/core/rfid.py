@@ -3,7 +3,8 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
-from .models import AccessEvent, AccessRules, Card, Enrollment, RFIDSettings, StudentFinancialStatus
+from .finance import enrollment_has_overdue_unpaid, sync_financial_status
+from .models import AccessEvent, AccessRules, Card, Enrollment, RFIDSettings
 from .card_lifecycle import sync_card_status_from_enrollment
 
 
@@ -201,15 +202,8 @@ def process_rfid_scan(uid, source=None, request_id="", timestamp=None):
         return _decision(event)
 
     rules, _ = AccessRules.objects.get_or_create(pk=1)
-    financial_status = StudentFinancialStatus.objects.filter(
-        student=enrollment.student,
-        academic_year=enrollment.academic_year,
-    ).first()
-    if (
-        rules.block_unpaid_fees
-        and financial_status
-        and (not financial_status.is_in_good_standing or financial_status.balance_due > 0)
-    ):
+    sync_financial_status(enrollment)
+    if rules.block_unpaid_fees and enrollment_has_overdue_unpaid(enrollment):
         event = _create_event(
             uid=uid,
             source=source,

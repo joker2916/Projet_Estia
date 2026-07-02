@@ -1,34 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
-import {
-  getAccessEvents,
-  getAttendanceLookups,
-  getActiveCards,
-  simulateRfidScan,
-} from "../api/attendance";
+import { getAccessEvents, getAttendanceLookups } from "../api/attendance";
 import PageHeader from "../components/PageHeader";
 import ContentCard from "../components/ContentCard";
-import GateSimulationAnimation from "../components/GateSimulationAnimation";
-
-const SCAN_ANIMATION_MS = 1400;
-const RESULT_DISPLAY_MS = 3200;
 
 function Attendance() {
   const [events, setEvents] = useState([]);
   const [faculties, setFaculties] = useState([]);
   const [promotions, setPromotions] = useState([]);
   const [years, setYears] = useState([]);
-  const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [simulation, setSimulation] = useState({
-    cardId: "",
-    uid: "",
-    source: "admin-simulator",
-  });
-  const [simulationResult, setSimulationResult] = useState(null);
-  const [simulating, setSimulating] = useState(false);
-  const [animationPhase, setAnimationPhase] = useState("idle");
-  const [activeScanMeta, setActiveScanMeta] = useState({ uid: "", studentName: "" });
   const [pagination, setPagination] = useState({
     page: 1,
     pageSize: 50,
@@ -95,86 +76,11 @@ function Attendance() {
   ]);
 
   const fetchLookups = async () => {
-    const [lookups, cardsRes] = await Promise.all([
-      getAttendanceLookups(),
-      getActiveCards(),
-    ]);
+    const lookups = await getAttendanceLookups();
     const [fRes, pRes, yRes] = lookups;
     setFaculties(fRes.data);
     setPromotions(pRes.data);
     setYears(yRes.data);
-    setCards(cardsRes.data);
-  };
-
-  const handleSimulateScan = async (e) => {
-    e.preventDefault();
-    const selectedCard = cards.find(
-      (card) => String(card.id) === String(simulation.cardId),
-    );
-    const uid = simulation.uid.trim() || selectedCard?.uid;
-
-    if (!uid) {
-      setSimulationResult({
-        allowed: false,
-        message: "Selectionnez une carte ou saisissez un UID RFID.",
-      });
-      setAnimationPhase("denied");
-      setActiveScanMeta({ uid: "", studentName: "" });
-      return;
-    }
-
-    setSimulating(true);
-    setSimulationResult(null);
-    setAnimationPhase("scanning");
-    setActiveScanMeta({
-      uid,
-      studentName: selectedCard?.student_name || "",
-    });
-
-    const scanStartedAt = Date.now();
-
-    try {
-      const requestId = `sim-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const apiPromise = simulateRfidScan({
-        uid,
-        source: simulation.source || "admin-simulator",
-        request_id: requestId,
-      });
-
-      await new Promise((resolve) => {
-        window.setTimeout(resolve, 700);
-      });
-      setAnimationPhase("processing");
-
-      const res = await apiPromise;
-      const elapsed = Date.now() - scanStartedAt;
-      if (elapsed < SCAN_ANIMATION_MS) {
-        await new Promise((resolve) => {
-          window.setTimeout(resolve, SCAN_ANIMATION_MS - elapsed);
-        });
-      }
-
-      setSimulationResult(res.data);
-      setAnimationPhase(res.data.allowed ? "allowed" : "denied");
-      await fetchAccessEvents();
-
-      window.setTimeout(() => {
-        setAnimationPhase("idle");
-        setActiveScanMeta({ uid: "", studentName: "" });
-      }, RESULT_DISPLAY_MS);
-    } catch {
-      setSimulationResult({
-        allowed: false,
-        message: "Simulation impossible. Verifiez que le backend est demarre.",
-      });
-      setAnimationPhase("denied");
-      window.setTimeout(() => {
-        setAnimationPhase("idle");
-        setActiveScanMeta({ uid: "", studentName: "" });
-      }, RESULT_DISPLAY_MS);
-    } finally {
-      setSimulating(false);
-    }
   };
 
   useEffect(() => {
@@ -189,92 +95,8 @@ function Attendance() {
     <div>
       <PageHeader
         title="Journal des Acces"
-        subtitle="Suivi des événements d'accès et simulation de passage au portique RFID."
+        subtitle="Suivi des evenements d'acces RFID enregistres au portique."
       />
-
-      <ContentCard style={{ marginBottom: "20px" }}>
-        <h2 style={{ marginTop: 0 }}>Simuler l&apos;entree d&apos;un etudiant</h2>
-        <p style={{ color: "#666", marginBottom: "16px" }}>
-          Choisissez une carte RFID active ou saisissez un UID pour imiter un
-          passage au portique de la faculte. Le resultat apparait ci-dessous et
-          dans le journal.
-        </p>
-
-        <GateSimulationAnimation
-          phase={animationPhase}
-          uid={activeScanMeta.uid}
-          studentName={activeScanMeta.studentName}
-        />
-
-        <form
-          onSubmit={handleSimulateScan}
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: "10px",
-            alignItems: "end",
-          }}
-        >
-          <label style={labelStyle}>
-            Carte etudiant
-            <select
-              value={simulation.cardId}
-              onChange={(e) =>
-                setSimulation({
-                  ...simulation,
-                  cardId: e.target.value,
-                  uid: "",
-                })
-              }
-              style={inputStyle}
-            >
-              <option value="">-- Choisir une carte --</option>
-              {cards.map((card) => (
-                <option key={card.id} value={card.id}>
-                  {card.student_name || "Sans etudiant"} — {card.uid}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label style={labelStyle}>
-            Ou UID manuel
-            <input
-              value={simulation.uid}
-              onChange={(e) =>
-                setSimulation({
-                  ...simulation,
-                  uid: e.target.value,
-                  cardId: "",
-                })
-              }
-              placeholder="Ex: 04A1B2C3"
-              style={inputStyle}
-            />
-          </label>
-          <button type="submit" disabled={simulating} style={simulateBtnStyle}>
-            {simulating ? "Simulation..." : "Simuler le passage"}
-          </button>
-        </form>
-        {simulationResult && (
-          <div
-            style={{
-              marginTop: "16px",
-              padding: "14px 16px",
-              borderRadius: "8px",
-              backgroundColor: simulationResult.allowed ? "#e8f5e9" : "#ffebee",
-              color: simulationResult.allowed ? "#1b5e20" : "#b71c1c",
-            }}
-          >
-            <strong>
-              {simulationResult.allowed ? "Acces autorise" : "Acces refuse"}
-            </strong>
-            <div>{simulationResult.message || "-"}</div>
-            {simulationResult.reason && simulationResult.reason !== "none" && (
-              <div>Motif : {simulationResult.reason}</div>
-            )}
-          </div>
-        )}
-      </ContentCard>
 
       <ContentCard
         style={{
@@ -331,9 +153,7 @@ function Attendance() {
 
         <select
           value={filters.promotion_id}
-          onChange={(e) =>
-            updateFilters({ promotion_id: e.target.value })
-          }
+          onChange={(e) => updateFilters({ promotion_id: e.target.value })}
           style={inputStyle}
         >
           <option value="">Toutes les promotions</option>
@@ -352,9 +172,7 @@ function Attendance() {
 
         <select
           value={filters.academic_year_id}
-          onChange={(e) =>
-            updateFilters({ academic_year_id: e.target.value })
-          }
+          onChange={(e) => updateFilters({ academic_year_id: e.target.value })}
           style={inputStyle}
         >
           <option value="">Toutes les annees</option>
@@ -489,22 +307,6 @@ const buttonStyle = {
   borderRadius: "6px",
   border: "1px solid #ccc",
   cursor: "pointer",
-};
-const labelStyle = {
-  display: "grid",
-  gap: "6px",
-  fontSize: "14px",
-  color: "#444",
-};
-const simulateBtnStyle = {
-  padding: "12px 16px",
-  borderRadius: "8px",
-  border: "none",
-  backgroundColor: "#1976d2",
-  color: "white",
-  cursor: "pointer",
-  fontSize: "15px",
-  fontWeight: "600",
 };
 
 export default Attendance;

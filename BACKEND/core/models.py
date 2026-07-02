@@ -286,6 +286,77 @@ class StudentFinancialStatus(models.Model):
         return f"{self.student.matricule} - {self.academic_year.name}"
 
 
+class PromotionTuitionPlan(models.Model):
+    promotion = models.ForeignKey(Promotion, on_delete=models.CASCADE, related_name="tuition_plans")
+    academic_year = models.ForeignKey(AcademicYear, on_delete=models.PROTECT, related_name="tuition_plans")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["promotion", "academic_year"],
+                name="unique_tuition_plan_per_promotion_year",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.promotion.name} - {self.academic_year.name}"
+
+
+class TuitionInstallment(models.Model):
+    plan = models.ForeignKey(PromotionTuitionPlan, on_delete=models.CASCADE, related_name="installments")
+    installment_number = models.PositiveSmallIntegerField()
+    label = models.CharField(max_length=100, blank=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    due_date = models.DateField()
+
+    class Meta:
+        ordering = ["installment_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["plan", "installment_number"],
+                name="unique_installment_number_per_plan",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(installment_number__gte=1, installment_number__lte=4),
+                name="installment_number_between_1_and_4",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Tranche {self.installment_number} - {self.plan}"
+
+
+class StudentInstallmentPayment(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_PAID = "paid"
+    STATUS_OVERDUE = "overdue"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_PAID, "Paid"),
+        (STATUS_OVERDUE, "Overdue"),
+    ]
+
+    enrollment = models.ForeignKey(Enrollment, on_delete=models.CASCADE, related_name="installment_payments")
+    installment = models.ForeignKey(TuitionInstallment, on_delete=models.CASCADE, related_name="student_payments")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    amount_paid = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["enrollment", "installment"],
+                name="unique_payment_per_enrollment_installment",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.enrollment.student.matricule} - tranche {self.installment.installment_number}"
+
+
 class BehaviorPointEntry(models.Model):
     enrollment = models.ForeignKey(Enrollment, on_delete=models.CASCADE, related_name="behavior_points")
     student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name="behavior_points")
