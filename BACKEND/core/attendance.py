@@ -115,3 +115,53 @@ def build_attendance_report(enrollment, start_date=None, end_date=None):
             for event in events[:100]
         ],
     }
+
+
+def build_attendance_timeline(enrollment, start_date=None, end_date=None):
+    rules, _ = AccessRules.objects.get_or_create(pk=1)
+    start, end = _clamp_period(enrollment, start_date, end_date)
+    late_limit = (
+        timezone.datetime.combine(start, rules.access_start)
+        + timedelta(minutes=rules.late_threshold_minutes)
+    ).time()
+
+    events = AccessEvent.objects.filter(
+        enrollment=enrollment,
+        created_at__date__gte=start,
+        created_at__date__lte=end,
+        result=AccessEvent.RESULT_ALLOWED,
+    ).order_by("created_at")
+
+    present_by_date = {}
+    for event in events:
+        event_date = timezone.localtime(event.created_at).date()
+        is_late = timezone.localtime(event.created_at).time() > late_limit
+        if event_date not in present_by_date:
+            present_by_date[event_date] = {"present": True, "late": is_late}
+        elif is_late:
+            present_by_date[event_date]["late"] = True
+
+    timeline = []
+    week_start = start
+    while week_start <= end:
+        week_end = min(week_start + timedelta(days=6), end)
+        expected = list(_weekdays_between(week_start, week_end))
+        present_count = sum(1 for day in expected if day in present_by_date)
+        late_count = sum(
+            1 for day in expected if day in present_by_date and present_by_date[day]["late"]
+        )
+        absent_count = len(expected) - present_count
+        attendance_rate = round(present_count / len(expected) * 100) if expected else 0
+        timeline.append(
+            {
+                "week_label": week_start.strftime("%d/%m"),
+                "week_start": week_start.isoformat(),
+                "week_end": week_end.isoformat(),
+                "present": present_count,
+                "absent": absent_count,
+                "late": late_count,
+                "attendance_rate": attendance_rate,
+            }
+        )
+        week_start = week_end + timedelta(days=1)
+    return timeline

@@ -27,7 +27,7 @@ from .serializers import (
     StudentSerializer, EnrollmentSerializer, StudentFinancialStatusSerializer,
     CardSerializer, AccessEventSerializer, RFIDScanRequestSerializer, ProfessorProfileSerializer
 )
-from .attendance import active_enrollment_for_student, build_attendance_report
+from .attendance import active_enrollment_for_student, build_attendance_report, build_attendance_timeline
 from .audit import log_admin_action
 from .card_lifecycle import (
     disable_cards_for_faculty,
@@ -36,6 +36,8 @@ from .card_lifecycle import (
 )
 from .cpt import (
     build_cpt_summary,
+    build_cpt_timeline,
+    build_cpt_weekly_timeline,
     professor_can_manage_enrollment,
     record_cpt_entry,
 )
@@ -279,8 +281,13 @@ def _build_professor_branches(profile, promotion_ids, start_date=None, end_date=
                     "period": attendance["period"],
                     "summary": attendance["summary"],
                     "absent_dates": attendance["absent_dates"],
+                    "timeline": build_attendance_timeline(enrollment, start_date, end_date),
                 },
-                "cpt": build_cpt_summary(enrollment),
+                "cpt": {
+                    **build_cpt_summary(enrollment),
+                    "timeline": build_cpt_timeline(enrollment, start_date, end_date),
+                    "weekly_timeline": build_cpt_weekly_timeline(enrollment, start_date, end_date),
+                },
             }
         )
 

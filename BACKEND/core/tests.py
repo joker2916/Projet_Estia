@@ -341,6 +341,14 @@ class MVPBusinessRulesTests(TestCase):
             for student in branch["students"]
         }
         self.assertIn(self.enrollment.id, enrollment_ids)
+        student = next(
+            item
+            for branch in report.data["branches"]
+            for item in branch["students"]
+            if item["enrollment_id"] == self.enrollment.id
+        )
+        self.assertIn("timeline", student["attendance"])
+        self.assertIn("weekly_timeline", student["cpt"])
 
         forbidden = professor_client.get(
             f"/api/professor/portal/?promotion_id={self.other_promotion.id}",

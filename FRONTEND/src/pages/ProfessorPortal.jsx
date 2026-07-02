@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { getProfessorPortal, updateProfessorCpt } from "../api/portals";
+import {
+  PromotionEvolutionCharts,
+  StudentEvolutionCharts,
+} from "../components/EvolutionCharts";
 
 function ProfessorPortal() {
   const token = localStorage.getItem("professorToken");
@@ -199,6 +203,9 @@ function ProfessorPortal() {
 
                 {isOpen && (
                   <div style={branchBody}>
+                    {branch.students.length > 0 && (
+                      <PromotionEvolutionCharts students={branch.students} />
+                    )}
                     {branch.students.length === 0 ? (
                       <p style={mutedText}>Aucun etudiant inscrit.</p>
                     ) : (
@@ -234,6 +241,7 @@ function ProfessorPortal() {
 
                             {isStudentOpen && (
                               <div style={studentBody}>
+                                <StudentEvolutionCharts studentNode={studentNode} />
                                 <div style={attendanceBlock}>
                                   <h3 style={blockTitle}>Assiduite</h3>
                                   <div style={statsGrid}>
