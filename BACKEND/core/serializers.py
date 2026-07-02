@@ -127,12 +127,49 @@ class AcademicYearSerializer(serializers.ModelSerializer):
 
 
 class PromotionSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(read_only=True)
     faculty_name = serializers.CharField(source='faculty.name', read_only=True)
     department_name = serializers.CharField(source='department.name', read_only=True)
 
     class Meta:
         model = Promotion
         fields = '__all__'
+        extra_kwargs = {
+            'level': {'required': True, 'allow_blank': False},
+        }
+
+    def _build_name(self, level):
+        return level.strip()
+
+    def validate(self, attrs):
+        instance = getattr(self, 'instance', None)
+        faculty = attrs.get('faculty', instance.faculty if instance else None)
+        level = attrs.get('level', instance.level if instance else '')
+        code = attrs.get('code', instance.code if instance else '')
+
+        if not faculty:
+            raise serializers.ValidationError({'faculty': 'La faculté est requise.'})
+
+        level_clean = (level or '').strip()
+        if not level_clean:
+            raise serializers.ValidationError({'level': 'Le niveau/promotion est requis.'})
+
+        code_clean = (code or '').strip()
+        attrs['level'] = level_clean
+        attrs['code'] = code_clean
+        attrs['name'] = self._build_name(level_clean)
+
+        existing = Promotion.objects.filter(faculty=faculty)
+        if instance:
+            existing = existing.exclude(pk=instance.pk)
+
+        if existing.filter(name=attrs['name']).exists():
+            raise serializers.ValidationError({'level': 'Une promotion avec ce niveau existe déjà dans cette faculté.'})
+
+        if existing.filter(code=code_clean).exists():
+            raise serializers.ValidationError({'code': 'Une promotion avec ce code existe déjà dans cette faculté.'})
+
+        return attrs
 
 class StudentSerializer(serializers.ModelSerializer):
     faculty_name = serializers.CharField(source='faculty.name', read_only=True)

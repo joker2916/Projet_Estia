@@ -5,6 +5,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from django.db.models import Q
 from django.db import transaction
+from django.db.models import F
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -25,6 +26,160 @@ from .serializers import (
     StudentSerializer, EnrollmentSerializer, StudentFinancialStatusSerializer,
     CardSerializer, AccessEventSerializer
 )
+
+
+def _is_outside_access_window(now_time, start_time, end_time):
+    # Supports both normal windows (07:00->18:00) and overnight windows (22:00->05:00).
+    if start_time <= end_time:
+        return not (start_time <= now_time <= end_time)
+    return not (now_time >= start_time or now_time <= end_time)
+
+
+def _build_access_decision(uid):
+    uid_value = (uid or '').strip()
+    if not uid_value:
+        return {
+            'result': AccessEvent.RESULT_DENIED,
+            'reason': AccessEvent.REASON_UNKNOWN_CARD,
+            'note': 'UID manquant',
+            'card': None,
+            'student': None,
+            'enrollment': None,
+            'faculty': None,
+            'promotion': None,
+            'academic_year': None,
+        }
+
+    try:
+        card = Card.objects.select_related(
+            'student', 'enrollment', 'enrollment__student', 'enrollment__faculty',
+            'enrollment__promotion', 'enrollment__academic_year'
+        ).get(uid=uid_value)
+    except Card.DoesNotExist:
+        return {
+            'result': AccessEvent.RESULT_DENIED,
+            'reason': AccessEvent.REASON_UNKNOWN_CARD,
+            'note': 'Carte inconnue',
+            'card': None,
+            'student': None,
+            'enrollment': None,
+            'faculty': None,
+            'promotion': None,
+            'academic_year': None,
+        }
+
+    student = card.student
+    enrollment = card.enrollment
+
+    if not student and enrollment:
+        student = enrollment.student
+
+    if student and not enrollment:
+        enrollment = Enrollment.objects.filter(student=student, is_active=True).select_related(
+            'faculty', 'promotion', 'academic_year'
+        ).order_by('-started_at').first()
+
+    faculty = enrollment.faculty if enrollment else (student.faculty if student else None)
+    promotion = enrollment.promotion if enrollment else (student.promotion if student else None)
+    academic_year = enrollment.academic_year if enrollment else (student.academic_year if student else None)
+
+    if card.status == Card.STATUS_DISABLED:
+        return {
+            'result': AccessEvent.RESULT_DENIED,
+            'reason': AccessEvent.REASON_DISABLED_CARD,
+            'note': 'Carte désactivée',
+            'card': card,
+            'student': student,
+            'enrollment': enrollment,
+            'faculty': faculty,
+            'promotion': promotion,
+            'academic_year': academic_year,
+        }
+
+    if card.status == Card.STATUS_EXPIRED:
+        return {
+            'result': AccessEvent.RESULT_DENIED,
+            'reason': AccessEvent.REASON_EXPIRED_CARD,
+            'note': 'Carte expirée',
+            'card': card,
+            'student': student,
+            'enrollment': enrollment,
+            'faculty': faculty,
+            'promotion': promotion,
+            'academic_year': academic_year,
+        }
+
+    if card.status == Card.STATUS_LOST:
+        return {
+            'result': AccessEvent.RESULT_DENIED,
+            'reason': AccessEvent.REASON_LOST_CARD,
+            'note': 'Carte signalée perdue',
+            'card': card,
+            'student': student,
+            'enrollment': enrollment,
+            'faculty': faculty,
+            'promotion': promotion,
+            'academic_year': academic_year,
+        }
+
+    if enrollment and not enrollment.is_active:
+        return {
+            'result': AccessEvent.RESULT_DENIED,
+            'reason': AccessEvent.REASON_INACTIVE_ENROLLMENT,
+            'note': 'Inscription inactive',
+            'card': card,
+            'student': student,
+            'enrollment': enrollment,
+            'faculty': faculty,
+            'promotion': promotion,
+            'academic_year': academic_year,
+        }
+
+    rules, _ = AccessRules.objects.get_or_create(pk=1)
+    now_time = timezone.localtime().time()
+    if _is_outside_access_window(now_time, rules.access_start, rules.access_end):
+        return {
+            'result': AccessEvent.RESULT_DENIED,
+            'reason': AccessEvent.REASON_OUTSIDE_SCHEDULE,
+            'note': 'En dehors des horaires autorisés',
+            'card': card,
+            'student': student,
+            'enrollment': enrollment,
+            'faculty': faculty,
+            'promotion': promotion,
+            'academic_year': academic_year,
+        }
+
+    if rules.block_unpaid_fees and student and academic_year:
+        financial = StudentFinancialStatus.objects.filter(
+            student=student,
+            academic_year=academic_year,
+            is_in_good_standing=False,
+        ).first()
+        if financial:
+            return {
+                'result': AccessEvent.RESULT_DENIED,
+                'reason': AccessEvent.REASON_UNPAID_FEES,
+                'note': 'Frais académiques impayés',
+                'card': card,
+                'student': student,
+                'enrollment': enrollment,
+                'faculty': faculty,
+                'promotion': promotion,
+                'academic_year': academic_year,
+            }
+
+    return {
+        'result': AccessEvent.RESULT_ALLOWED,
+        'reason': AccessEvent.REASON_NONE,
+        'note': 'Accès autorisé',
+        'card': card,
+        'student': student,
+        'enrollment': enrollment,
+        'faculty': faculty,
+        'promotion': promotion,
+        'academic_year': academic_year,
+    }
 
 
 DEFAULT_PERMISSION_CATALOG = [
@@ -920,6 +1075,59 @@ def access_events_view(request):
         serializer.save()
         return Response(serializer.data, status=201)
     return Response(serializer.errors, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def device_access_check_view(request):
+    uid = request.data.get('uid', '')
+    source = request.data.get('source', 'esp32_gate')
+    open_duration_ms = int(request.data.get('open_duration_ms', 3000))
+    open_duration_ms = max(500, min(open_duration_ms, 15000))
+
+    decision = _build_access_decision(uid)
+
+    event = AccessEvent.objects.create(
+        card=decision['card'],
+        student=decision['student'],
+        enrollment=decision['enrollment'],
+        faculty=decision['faculty'],
+        promotion=decision['promotion'],
+        academic_year=decision['academic_year'],
+        result=decision['result'],
+        reason=decision['reason'],
+        note=decision['note'],
+        source=source,
+    )
+
+    if decision['result'] == AccessEvent.RESULT_ALLOWED and decision['card']:
+        Card.objects.filter(pk=decision['card'].pk).update(
+            total_uses=F('total_uses') + 1,
+            last_used_at=timezone.now(),
+            assigned_at=decision['card'].assigned_at or timezone.now(),
+        )
+
+    student = decision['student']
+    response_payload = {
+        'allowed': decision['result'] == AccessEvent.RESULT_ALLOWED,
+        'result': decision['result'],
+        'reason': decision['reason'],
+        'message': decision['note'],
+        'door_action': 'open' if decision['result'] == AccessEvent.RESULT_ALLOWED else 'keep_closed',
+        'open_duration_ms': open_duration_ms,
+        'event_id': event.id,
+        'uid': uid,
+        'card_uuid': str(decision['card'].card_uuid) if decision['card'] else None,
+        'server_time': timezone.now().isoformat(),
+        'student': {
+            'id': student.id,
+            'matricule': student.matricule,
+            'first_name': student.first_name,
+            'last_name': student.last_name,
+        } if student else None,
+    }
+
+    return Response(response_payload)
 
 
 # ========== DASHBOARD ==========

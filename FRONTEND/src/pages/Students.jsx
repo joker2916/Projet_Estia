@@ -11,8 +11,6 @@ function Students({ embedded = false }) {
     last_name: "",
     email: "",
     matricule: "",
-    filiere: "",
-    niveau: "",
     faculty: "",
     promotion: "",
     academic_year: "",
@@ -74,8 +72,6 @@ function Students({ embedded = false }) {
       last_name: "",
       email: "",
       matricule: "",
-      filiere: "",
-      niveau: "",
       faculty: "",
       promotion: "",
       academic_year: "",
@@ -90,8 +86,6 @@ function Students({ embedded = false }) {
       last_name: student.last_name,
       email: student.email,
       matricule: student.matricule,
-      filiere: student.filiere,
-      niveau: student.niveau,
       faculty: student.faculty || "",
       promotion: student.promotion || "",
       academic_year: student.academic_year || "",
@@ -234,22 +228,6 @@ function Students({ embedded = false }) {
           required
           style={inputStyle}
         />
-        <input
-          name="filiere"
-          placeholder="Filière"
-          value={form.filiere}
-          onChange={handleChange}
-          required
-          style={inputStyle}
-        />
-        <input
-          name="niveau"
-          placeholder="Niveau (L1, L2...)"
-          value={form.niveau}
-          onChange={handleChange}
-          required
-          style={inputStyle}
-        />
         <select
           name="faculty"
           value={form.faculty}
@@ -329,7 +307,6 @@ function Students({ embedded = false }) {
             <th style={thStyle}>Faculte</th>
             <th style={thStyle}>Promotion</th>
             <th style={thStyle}>Annee</th>
-            <th style={thStyle}>Niveau</th>
             <th style={thStyle}>Actions</th>
           </tr>
         </thead>
@@ -343,7 +320,6 @@ function Students({ embedded = false }) {
               <td style={tdStyle}>{s.faculty_name || "-"}</td>
               <td style={tdStyle}>{s.promotion_name || "-"}</td>
               <td style={tdStyle}>{s.academic_year_name || "-"}</td>
-              <td style={tdStyle}>{s.niveau}</td>
               <td style={tdStyle}>
                 <button onClick={() => handleEdit(s)} style={btnEdit}>
                   Modifier

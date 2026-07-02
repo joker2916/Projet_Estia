@@ -12,6 +12,7 @@ function Academics() {
   const [promotions, setPromotions] = useState([]);
   const [students, setStudents] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
+  const [promotionError, setPromotionError] = useState("");
 
   const [facultyForm, setFacultyForm] = useState({ name: "", code: "" });
   const [yearForm, setYearForm] = useState({
@@ -23,7 +24,6 @@ function Academics() {
   const [promotionForm, setPromotionForm] = useState({
     faculty: "",
     department: "",
-    name: "",
     code: "",
     level: "",
   });
@@ -69,6 +69,24 @@ function Academics() {
     fetchEnrollments();
   }, []);
 
+  const extractApiErrorMessage = (error, fallbackMessage) => {
+    const data = error?.response?.data;
+
+    if (!data) return fallbackMessage;
+    if (typeof data === "string") return data;
+
+    if (Array.isArray(data)) {
+      return data.join(" ");
+    }
+
+    const messages = Object.values(data)
+      .flatMap((value) => (Array.isArray(value) ? value : [value]))
+      .filter(Boolean)
+      .map((value) => String(value));
+
+    return messages.length ? messages.join(" ") : fallbackMessage;
+  };
+
   const handleCreateFaculty = async (e) => {
     e.preventDefault();
     await api.post("faculties/", facultyForm);
@@ -94,18 +112,27 @@ function Academics() {
 
   const handleCreatePromotion = async (e) => {
     e.preventDefault();
-    await api.post("promotions/", {
-      ...promotionForm,
-      department: promotionForm.department || null,
-    });
-    setPromotionForm({
-      faculty: "",
-      department: "",
-      name: "",
-      code: "",
-      level: "",
-    });
-    fetchPromotions();
+    setPromotionError("");
+    try {
+      await api.post("promotions/", {
+        ...promotionForm,
+        department: promotionForm.department || null,
+      });
+      setPromotionForm({
+        faculty: "",
+        department: "",
+        code: "",
+        level: "",
+      });
+      fetchPromotions();
+    } catch (error) {
+      setPromotionError(
+        extractApiErrorMessage(
+          error,
+          "Impossible de creer la promotion. Verifiez les champs saisis.",
+        ),
+      );
+    }
   };
 
   const handlePromotionStatus = async (promotion) => {
@@ -345,15 +372,6 @@ function Academics() {
               ))}
             </select>
             <input
-              placeholder="Nom (ex: L3 Informatique)"
-              value={promotionForm.name}
-              onChange={(e) =>
-                setPromotionForm({ ...promotionForm, name: e.target.value })
-              }
-              required
-              style={inputStyle}
-            />
-            <input
               placeholder="Code (ex: L3-INFO)"
               value={promotionForm.code}
               onChange={(e) =>
@@ -368,6 +386,7 @@ function Academics() {
               onChange={(e) =>
                 setPromotionForm({ ...promotionForm, level: e.target.value })
               }
+              required
               style={inputStyle}
             />
             <button type="submit" style={primaryBtn}>
@@ -375,10 +394,21 @@ function Academics() {
             </button>
           </form>
 
+          {promotionError && (
+            <p
+              style={{
+                color: "#b71c1c",
+                margin: "10px 0 14px",
+                fontWeight: 600,
+              }}
+            >
+              {promotionError}
+            </p>
+          )}
+
           <table style={tableStyle}>
             <thead>
               <tr>
-                <th style={thStyle}>Nom</th>
                 <th style={thStyle}>Code</th>
                 <th style={thStyle}>Faculte</th>
                 <th style={thStyle}>Niveau</th>
@@ -389,7 +419,6 @@ function Academics() {
             <tbody>
               {promotions.map((p) => (
                 <tr key={p.id}>
-                  <td style={tdStyle}>{p.name}</td>
                   <td style={tdStyle}>{p.code}</td>
                   <td style={tdStyle}>{p.faculty_name}</td>
                   <td style={tdStyle}>{p.level || "-"}</td>

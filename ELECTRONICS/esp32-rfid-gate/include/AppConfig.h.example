@@ -1,0 +1,32 @@
+#pragma once
+
+namespace AppConfig {
+
+// Wi-Fi
+static const char* WIFI_SSID = "YOUR_WIFI_SSID";
+static const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+
+// Backend URL should point to your Django host reachable by ESP32.
+// Example: http://192.168.1.20:8000
+static const char* SERVER_BASE_URL = "http://192.168.1.20:8000";
+
+// Use a dedicated device user token (DRF token).
+static const char* API_TOKEN = "PUT_DEVICE_TOKEN_HERE";
+
+// Device identity
+static const char* DEVICE_SOURCE = "esp32_gate_main";
+
+// Networking behavior
+constexpr uint32_t HTTP_TIMEOUT_MS = 4000;
+constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 7000;
+constexpr uint32_t LOOP_IDLE_DELAY_MS = 25;
+
+// Access control behavior
+constexpr uint32_t DOOR_OPEN_MS = 3000;
+constexpr uint32_t CARD_COOLDOWN_MS = 1800;
+
+// Servo angles (tune on real installation)
+constexpr int SERVO_CLOSED_ANGLE = 5;
+constexpr int SERVO_OPEN_ANGLE = 92;
+
+}

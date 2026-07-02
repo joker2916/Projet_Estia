@@ -68,5 +68,6 @@ urlpatterns = [
 
     # Accès RFID
     path('access-events/', views.access_events_view, name='access-events'),
+    path('device/access-check/', views.device_access_check_view, name='device-access-check'),
 ]
 
