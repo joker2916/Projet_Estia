@@ -1,18 +1,20 @@
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
+from django.core import signing
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
-from django.db.models import Q
+from django.core.paginator import Paginator
+from django.db.models import Count, Exists, OuterRef, Prefetch, Q
 from django.db import transaction
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 import json
 
 from .models import (
-    UniversityInfo, Role, Permission, UserProfile,
+    UniversityInfo, Role, Permission, UserProfile, ProfessorProfile,
     RFIDSettings, AccessRules, NotificationSettings,
     Faculty, Department, AcademicYear, Promotion,
     Student, Enrollment, StudentFinancialStatus,
@@ -23,20 +25,45 @@ from .serializers import (
     RFIDSettingsSerializer, AccessRulesSerializer, NotificationSettingsSerializer,
     FacultySerializer, DepartmentSerializer, AcademicYearSerializer, PromotionSerializer,
     StudentSerializer, EnrollmentSerializer, StudentFinancialStatusSerializer,
-    CardSerializer, AccessEventSerializer
+    CardSerializer, AccessEventSerializer, RFIDScanRequestSerializer, ProfessorProfileSerializer
 )
+from .attendance import active_enrollment_for_student, build_attendance_report
+from .audit import log_admin_action
+from .card_lifecycle import (
+    disable_cards_for_faculty,
+    disable_cards_for_promotion,
+    expire_cards_for_enrollments,
+)
+from .cpt import (
+    build_cpt_summary,
+    professor_can_manage_enrollment,
+    record_cpt_entry,
+)
+from .ldap_auth import authenticate_professor, authenticate_student
+from .permissions import HasRolePermission as IsAuthenticated
+from .rfid import process_rfid_scan
 
 
 DEFAULT_PERMISSION_CATALOG = [
     {"code": "all_access", "label": "Accès total", "module": "global"},
+    {"code": "view_dashboard", "label": "Voir le tableau de bord", "module": "dashboard"},
+    {"code": "view_settings", "label": "Voir les paramètres", "module": "settings"},
+    {"code": "manage_settings", "label": "Gérer les paramètres généraux", "module": "settings"},
     {"code": "manage_users", "label": "Gérer les utilisateurs", "module": "users"},
     {"code": "manage_roles", "label": "Gérer les rôles", "module": "users"},
+    {"code": "view_academics", "label": "Voir les données académiques", "module": "academics"},
+    {"code": "manage_academics", "label": "Gérer la structure académique", "module": "academics"},
     {"code": "manage_students", "label": "Gérer les étudiants", "module": "academics"},
     {"code": "manage_faculties", "label": "Gérer les facultés", "module": "academics"},
     {"code": "manage_promotions", "label": "Gérer les promotions", "module": "academics"},
     {"code": "view_access_logs", "label": "Voir les journaux d'accès", "module": "access"},
+    {"code": "record_access_events", "label": "Enregistrer des événements d'accès", "module": "access"},
+    {"code": "view_cards", "label": "Voir les cartes RFID", "module": "cards"},
     {"code": "manage_cards", "label": "Gérer les cartes RFID", "module": "cards"},
     {"code": "view_financial_status", "label": "Voir statut financier", "module": "finance"},
+    {"code": "manage_financial_status", "label": "Gérer statut financier", "module": "finance"},
+    {"code": "manage_rfid_settings", "label": "Gérer les paramètres RFID", "module": "rfid"},
+    {"code": "scan_rfid", "label": "Scanner des cartes RFID", "module": "rfid"},
     {"code": "manage_access_rules", "label": "Gérer les règles d'accès", "module": "access"},
     {"code": "manage_notifications", "label": "Gérer les notifications", "module": "notifications"},
 ]
@@ -45,46 +72,76 @@ DEFAULT_PERMISSION_CATALOG = [
 DEFAULT_DIRECTION_ROLE_TEMPLATES = {
     "Super Administrateur": [
         "all_access",
+        "view_dashboard",
+        "view_settings",
+        "manage_settings",
         "manage_users",
         "manage_roles",
+        "view_academics",
+        "manage_academics",
         "manage_students",
         "manage_faculties",
         "manage_promotions",
         "view_access_logs",
+        "record_access_events",
+        "view_cards",
         "manage_cards",
         "view_financial_status",
+        "manage_financial_status",
+        "manage_rfid_settings",
+        "scan_rfid",
         "manage_access_rules",
         "manage_notifications",
     ],
     "Recteur": [
+        "view_dashboard",
+        "view_academics",
         "view_access_logs",
         "view_financial_status",
         "manage_access_rules",
     ],
     "Secretaire General Academique": [
+        "view_dashboard",
+        "view_academics",
+        "manage_academics",
         "manage_students",
         "manage_faculties",
         "manage_promotions",
         "view_access_logs",
     ],
     "Responsable de la Scolarite": [
+        "view_dashboard",
+        "view_academics",
+        "manage_academics",
         "manage_students",
         "manage_faculties",
         "manage_promotions",
+        "view_cards",
         "manage_cards",
     ],
     "Responsable des Finances": [
+        "view_dashboard",
+        "view_academics",
         "view_financial_status",
+        "manage_financial_status",
         "view_access_logs",
     ],
     "Responsable de la Securite": [
+        "view_dashboard",
         "view_access_logs",
+        "record_access_events",
+        "view_cards",
         "manage_cards",
+        "scan_rfid",
         "manage_access_rules",
     ],
     "Responsable Informatique": [
+        "view_dashboard",
+        "view_settings",
+        "manage_settings",
         "manage_users",
         "manage_roles",
+        "manage_rfid_settings",
         "manage_notifications",
         "view_access_logs",
     ],
@@ -92,9 +149,15 @@ DEFAULT_DIRECTION_ROLE_TEMPLATES = {
 
 
 def ensure_default_permissions():
-    if Permission.objects.exists():
-        return
-    Permission.objects.bulk_create([Permission(**item) for item in DEFAULT_PERMISSION_CATALOG])
+    for item in DEFAULT_PERMISSION_CATALOG:
+        Permission.objects.update_or_create(
+            code=item["code"],
+            defaults={
+                "label": item["label"],
+                "module": item["module"],
+                "active": True,
+            },
+        )
 
 
 # ========== LOGIN ==========
@@ -110,9 +173,12 @@ def login_view(request):
 
             if user is not None:
                 token, created = Token.objects.get_or_create(user=user)
+                profile = getattr(user, "professor_profile", None)
+                is_professor = bool(profile and profile.active)
                 return JsonResponse({
                     'token': token.key,
                     'username': user.username,
+                    'account_type': 'professor' if is_professor else 'admin',
                 }, status=200)
             else:
                 return JsonResponse({'error': 'Identifiants invalides'}, status=401)
@@ -120,6 +186,193 @@ def login_view(request):
             return JsonResponse({'error': 'JSON invalide'}, status=400)
 
     return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+
+
+def _student_token(student):
+    return signing.dumps({"student_id": student.id}, salt="student-portal")
+
+
+def _student_from_request(request):
+    auth_header = request.headers.get("Authorization", "")
+    prefix = "Student "
+    if not auth_header.startswith(prefix):
+        return None
+    try:
+        payload = signing.loads(auth_header[len(prefix):], salt="student-portal", max_age=60 * 60 * 12)
+    except signing.BadSignature:
+        return None
+    return Student.objects.filter(pk=payload.get("student_id")).first()
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def student_login_view(request):
+    student = authenticate_student(
+        request.data.get('matricule', '').strip(),
+        request.data.get('password', ''),
+    )
+    if not student:
+        return Response({'error': 'Identifiants étudiant invalides'}, status=401)
+    enrollment = active_enrollment_for_student(student)
+    if not enrollment:
+        return Response({'error': 'Aucune inscription active pour cet étudiant'}, status=403)
+    return Response({
+        'token': _student_token(student),
+        'matricule': student.matricule,
+        'student_name': f"{student.first_name} {student.last_name}",
+        'enrollment_id': enrollment.id,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def student_portal_view(request):
+    student = _student_from_request(request)
+    if not student:
+        return Response({'error': 'Token étudiant invalide'}, status=401)
+    enrollment = active_enrollment_for_student(student)
+    if not enrollment:
+        return Response({'error': 'Aucune inscription active'}, status=404)
+    report = build_attendance_report(
+        enrollment,
+        request.query_params.get('start_date'),
+        request.query_params.get('end_date'),
+    )
+    return Response(report)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def professor_login_view(request):
+    user = authenticate_professor(
+        request.data.get('username', '').strip(),
+        request.data.get('password', ''),
+    )
+    if not user:
+        return Response({'error': 'Identifiants professeur invalides'}, status=401)
+    token, _ = Token.objects.get_or_create(user=user)
+    profile = user.professor_profile
+    return Response({
+        'token': token.key,
+        'username': user.username,
+        'professor': ProfessorProfileSerializer(profile).data,
+    })
+
+
+def _build_professor_branches(profile, promotion_ids, start_date=None, end_date=None):
+    enrollments = (
+        Enrollment.objects.select_related(
+            "student", "faculty", "promotion", "academic_year", "promotion__faculty"
+        )
+        .filter(is_active=True, promotion_id__in=promotion_ids)
+        .order_by("promotion__name", "student__last_name", "student__first_name")
+    )
+    students_by_promotion = {promotion_id: [] for promotion_id in promotion_ids}
+    for enrollment in enrollments:
+        attendance = build_attendance_report(enrollment, start_date, end_date)
+        students_by_promotion.setdefault(enrollment.promotion_id, []).append(
+            {
+                "enrollment_id": enrollment.id,
+                "student": attendance["student"],
+                "enrollment": attendance["enrollment"],
+                "attendance": {
+                    "period": attendance["period"],
+                    "summary": attendance["summary"],
+                    "absent_dates": attendance["absent_dates"],
+                },
+                "cpt": build_cpt_summary(enrollment),
+            }
+        )
+
+    branches = []
+    for promotion in profile.promotions.select_related("faculty").filter(id__in=promotion_ids):
+        branches.append(
+            {
+                "promotion": {
+                    "id": promotion.id,
+                    "name": promotion.name,
+                    "code": promotion.code,
+                    "faculty": promotion.faculty.name,
+                    "course_start_date": promotion.course_start_date.isoformat(),
+                    "course_end_date": promotion.course_end_date.isoformat(),
+                },
+                "students": students_by_promotion.get(promotion.id, []),
+            }
+        )
+    return branches
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def professor_portal_view(request):
+    profile = getattr(request.user, 'professor_profile', None)
+    if not profile or not profile.active:
+        return Response({'error': 'Profil professeur introuvable'}, status=403)
+
+    promotion_ids = list(profile.promotions.values_list('id', flat=True))
+    requested_promotion_id = request.query_params.get('promotion_id')
+    if requested_promotion_id:
+        try:
+            requested_promotion_id = int(requested_promotion_id)
+        except ValueError:
+            return Response({'error': 'promotion_id invalide'}, status=400)
+        if requested_promotion_id not in promotion_ids:
+            return Response({'error': 'Promotion non affectée à ce professeur'}, status=403)
+        promotion_ids = [requested_promotion_id]
+
+    branches = _build_professor_branches(
+        profile,
+        promotion_ids,
+        request.query_params.get('start_date'),
+        request.query_params.get('end_date'),
+    )
+    return Response({
+        'professor': ProfessorProfileSerializer(profile).data,
+        'branches': branches,
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def professor_cpt_view(request):
+    profile = getattr(request.user, 'professor_profile', None)
+    if not profile or not profile.active:
+        return Response({'error': 'Profil professeur introuvable'}, status=403)
+
+    enrollment_id = request.data.get('enrollment_id')
+    try:
+        points_delta = int(request.data.get('delta', 0))
+    except (TypeError, ValueError):
+        return Response({'error': 'delta invalide'}, status=400)
+    note = (request.data.get('note') or '').strip()
+
+    if not enrollment_id:
+        return Response({'error': 'enrollment_id requis'}, status=400)
+    if points_delta == 0:
+        return Response({'error': 'delta doit etre different de zero'}, status=400)
+
+    try:
+        enrollment = Enrollment.objects.select_related("promotion", "student").get(pk=enrollment_id)
+    except Enrollment.DoesNotExist:
+        return Response({'error': 'Inscription introuvable'}, status=404)
+
+    if not professor_can_manage_enrollment(profile, enrollment):
+        return Response({'error': 'Etudiant hors de vos promotions affectees'}, status=403)
+
+    entry = record_cpt_entry(enrollment, request.user, points_delta, note)
+    return Response(
+        {
+            "message": "Points CPT mis a jour",
+            "entry": {
+                "id": entry.id,
+                "points_delta": entry.points_delta,
+                "note": entry.note,
+                "created_at": entry.created_at.isoformat(),
+            },
+            "cpt": build_cpt_summary(enrollment),
+        },
+        status=201,
+    )
 
 
 # ========== INFO GÉNÉRALE ==========
@@ -138,6 +391,7 @@ def university_info_view(request):
         if 'logo' in request.FILES:
             info.logo = request.FILES['logo']
         info.save()
+        log_admin_action(request, "update_university_info", info)
         serializer = UniversityInfoSerializer(info)
         return Response(serializer.data)
 
@@ -156,7 +410,8 @@ def roles_view(request):
     if request.method == 'POST':
         serializer = RoleSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            role = serializer.save()
+            log_admin_action(request, "create_role", role)
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
 
@@ -172,11 +427,13 @@ def role_detail_view(request, pk):
     if request.method == 'PUT':
         serializer = RoleSerializer(role, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()
+            updated = serializer.save()
+            log_admin_action(request, "update_role", updated)
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
 
     if request.method == 'DELETE':
+        log_admin_action(request, "delete_role", role, {"name": role.name})
         role.delete()
         return Response({'message': 'Rôle supprimé'}, status=204)
 
@@ -208,7 +465,8 @@ def permission_detail_view(request, pk):
 
     serializer = PermissionSerializer(permission, data=request.data, partial=True)
     if serializer.is_valid():
-        serializer.save()
+        updated = serializer.save()
+        log_admin_action(request, "update_permission", updated)
         return Response(serializer.data)
     return Response(serializer.errors, status=400)
 
@@ -243,6 +501,11 @@ def bootstrap_direction_roles_view(request):
             else:
                 updated.append(role.name)
 
+    log_admin_action(
+        request,
+        "bootstrap_direction_roles",
+        metadata={"created_roles": created, "updated_roles": updated},
+    )
     return Response({
         'created_roles': created,
         'updated_roles': updated,
@@ -268,6 +531,7 @@ def user_toggle_view(request, pk):
 
     user.is_active = not user.is_active
     user.save()
+    log_admin_action(request, "toggle_user", user, {"active": user.is_active})
     return Response({'id': user.id, 'username': user.username, 'active': user.is_active})
 
 
@@ -291,6 +555,12 @@ def user_assign_role_view(request, pk):
     profile, _ = UserProfile.objects.get_or_create(user=user)
     profile.role = role
     profile.save(update_fields=['role'])
+    log_admin_action(
+        request,
+        "assign_user_role",
+        user,
+        {"role_id": role.id if role else None, "role": role.name if role else None},
+    )
 
     serializer = UserSerializer(user)
     return Response(serializer.data)
@@ -307,7 +577,52 @@ def user_reset_password_view(request, pk):
     new_password = request.data.get('password', 'default123')
     user.set_password(new_password)
     user.save()
+    log_admin_action(request, "reset_user_password", user)
     return Response({'message': f'Mot de passe de {user.username} réinitialisé'})
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def professors_view(request):
+    if request.method == 'GET':
+        profiles = ProfessorProfile.objects.select_related('user').prefetch_related('promotions__faculty').all()
+        serializer = ProfessorProfileSerializer(profiles, many=True)
+        return Response(serializer.data)
+
+    username = request.data.get('username', '').strip()
+    password = request.data.get('password', 'prof123')
+    email = request.data.get('email', '')
+    promotion_ids = request.data.get('promotion_ids', [])
+    if not username:
+        return Response({'error': 'username est requis'}, status=400)
+    user, created = User.objects.get_or_create(username=username, defaults={'email': email})
+    if created or password:
+        user.set_password(password)
+        user.save()
+    profile, _ = ProfessorProfile.objects.get_or_create(user=user)
+    profile.active = request.data.get('active', True)
+    profile.save(update_fields=['active'])
+    profile.promotions.set(Promotion.objects.filter(id__in=promotion_ids, is_active=True, faculty__is_active=True))
+    log_admin_action(request, "upsert_professor_profile", profile)
+    return Response(ProfessorProfileSerializer(profile).data, status=201)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def professor_detail_view(request, pk):
+    try:
+        profile = ProfessorProfile.objects.get(pk=pk)
+    except ProfessorProfile.DoesNotExist:
+        return Response({'error': 'Professeur introuvable'}, status=404)
+
+    promotion_ids = request.data.get('promotion_ids')
+    if promotion_ids is not None:
+        profile.promotions.set(Promotion.objects.filter(id__in=promotion_ids, is_active=True, faculty__is_active=True))
+    if 'active' in request.data:
+        profile.active = bool(request.data.get('active'))
+        profile.save(update_fields=['active'])
+    log_admin_action(request, "update_professor_profile", profile)
+    return Response(ProfessorProfileSerializer(profile).data)
 
 
 # ========== RFID ==========
@@ -323,7 +638,8 @@ def rfid_settings_view(request):
     if request.method == 'PUT':
         serializer = RFIDSettingsSerializer(settings, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()
+            updated = serializer.save()
+            log_admin_action(request, "update_rfid_settings", updated)
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
 
@@ -341,7 +657,8 @@ def access_rules_view(request):
     if request.method == 'PUT':
         serializer = AccessRulesSerializer(rules, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()
+            updated = serializer.save()
+            log_admin_action(request, "update_access_rules", updated)
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
 
@@ -359,7 +676,8 @@ def notification_settings_view(request):
     if request.method == 'PUT':
         serializer = NotificationSettingsSerializer(settings, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()
+            updated = serializer.save()
+            log_admin_action(request, "update_notification_settings", updated)
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
 
@@ -417,7 +735,17 @@ def faculty_deactivate_view(request, pk):
     faculty.is_active = False
     faculty.deactivated_at = timezone.now()
     faculty.save(update_fields=['is_active', 'deactivated_at'])
-    return Response({'message': 'Faculté désactivée'})
+    Promotion.objects.filter(faculty=faculty, is_active=True).update(
+        is_active=False,
+        deactivated_at=timezone.now(),
+    )
+    Department.objects.filter(faculty=faculty, is_active=True).update(
+        is_active=False,
+        deactivated_at=timezone.now(),
+    )
+    disable_cards_for_faculty(faculty)
+    log_admin_action(request, "deactivate_faculty", faculty, {"cascade_promotions": True})
+    return Response({'message': 'Faculté et promotions associées désactivées'})
 
 
 @api_view(['POST'])
@@ -431,6 +759,7 @@ def faculty_reactivate_view(request, pk):
     faculty.is_active = True
     faculty.deactivated_at = None
     faculty.save(update_fields=['is_active', 'deactivated_at'])
+    log_admin_action(request, "reactivate_faculty", faculty)
     serializer = FacultySerializer(faculty)
     return Response(serializer.data)
 
@@ -527,9 +856,9 @@ def promotions_view(request):
         if department_id:
             promotions = promotions.filter(department_id=department_id)
         if status_filter == 'active':
-            promotions = promotions.filter(is_active=True)
+            promotions = promotions.filter(is_active=True, faculty__is_active=True)
         elif status_filter == 'inactive':
-            promotions = promotions.filter(is_active=False)
+            promotions = promotions.filter(Q(is_active=False) | Q(faculty__is_active=False))
         if search:
             promotions = promotions.filter(Q(name__icontains=search) | Q(code__icontains=search))
 
@@ -566,23 +895,42 @@ def promotion_deactivate_view(request, pk):
     except Promotion.DoesNotExist:
         return Response({'error': 'Promotion introuvable'}, status=404)
 
+    now = timezone.now()
     promotion.is_active = False
-    promotion.deactivated_at = timezone.now()
+    promotion.deactivated_at = now
     promotion.save(update_fields=['is_active', 'deactivated_at'])
-    return Response({'message': 'Promotion désactivée'})
+    Enrollment.objects.filter(promotion=promotion, is_active=True).update(
+        is_active=False,
+        ended_at=now,
+    )
+    disable_cards_for_promotion(promotion)
+    log_admin_action(
+        request,
+        "deactivate_promotion",
+        promotion,
+        {"cascade_enrollments": True, "cards_disabled": True},
+    )
+    return Response({'message': 'Promotion, inscriptions et cartes associées désactivées'})
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def promotion_reactivate_view(request, pk):
     try:
-        promotion = Promotion.objects.get(pk=pk)
+        promotion = Promotion.objects.select_related('faculty').get(pk=pk)
     except Promotion.DoesNotExist:
         return Response({'error': 'Promotion introuvable'}, status=404)
+
+    if not promotion.faculty.is_active:
+        return Response(
+            {'error': 'Impossible de réactiver la promotion : la faculté est désactivée'},
+            status=400,
+        )
 
     promotion.is_active = True
     promotion.deactivated_at = None
     promotion.save(update_fields=['is_active', 'deactivated_at'])
+    log_admin_action(request, "reactivate_promotion", promotion)
     serializer = PromotionSerializer(promotion)
     return Response(serializer.data)
 
@@ -610,7 +958,11 @@ def enrollments_view(request):
         if academic_year_id:
             enrollments = enrollments.filter(academic_year_id=academic_year_id)
         if status_filter == 'active':
-            enrollments = enrollments.filter(is_active=True)
+            enrollments = enrollments.filter(
+                is_active=True,
+                faculty__is_active=True,
+                promotion__is_active=True,
+            )
         elif status_filter == 'inactive':
             enrollments = enrollments.filter(is_active=False)
 
@@ -657,7 +1009,12 @@ def student_transfer_view(request, pk):
         except Department.DoesNotExist:
             return Response({'error': 'Département introuvable'}, status=404)
 
-    Enrollment.objects.filter(student=student, is_active=True).update(is_active=False, ended_at=timezone.now())
+    ended_enrollment_ids = list(
+        Enrollment.objects.filter(student=student, is_active=True).values_list("id", flat=True)
+    )
+    now = timezone.now()
+    Enrollment.objects.filter(student=student, is_active=True).update(is_active=False, ended_at=now)
+    expire_cards_for_enrollments(ended_enrollment_ids)
 
     enrollment, created = Enrollment.objects.update_or_create(
         student=student,
@@ -675,6 +1032,7 @@ def student_transfer_view(request, pk):
     student.promotion = promotion
     student.academic_year = academic_year
     student.save(update_fields=['faculty', 'promotion', 'academic_year'])
+    log_admin_action(request, "transfer_student", student, {"enrollment_id": enrollment.id})
 
     serializer = EnrollmentSerializer(enrollment)
     return Response(serializer.data)
@@ -726,7 +1084,18 @@ def financial_status_detail_view(request, pk):
 @permission_classes([IsAuthenticated])
 def students_view(request):
     if request.method == 'GET':
-        students = Student.objects.all()
+        active_enrollments = Enrollment.objects.filter(
+            student_id=OuterRef('pk'),
+            is_active=True,
+        )
+        students = Student.objects.prefetch_related(
+            Prefetch(
+                'enrollments',
+                queryset=Enrollment.objects.filter(is_active=True).select_related(
+                    'faculty', 'promotion', 'academic_year'
+                ),
+            )
+        ).all()
         search = request.query_params.get('search', '')
         faculty_id = request.query_params.get('faculty_id')
         promotion_id = request.query_params.get('promotion_id')
@@ -741,11 +1110,17 @@ def students_view(request):
             )
 
         if faculty_id:
-            students = students.filter(faculty_id=faculty_id)
+            students = students.filter(
+                Exists(active_enrollments.filter(faculty_id=faculty_id))
+            )
         if promotion_id:
-            students = students.filter(promotion_id=promotion_id)
+            students = students.filter(
+                Exists(active_enrollments.filter(promotion_id=promotion_id))
+            )
         if academic_year_id:
-            students = students.filter(academic_year_id=academic_year_id)
+            students = students.filter(
+                Exists(active_enrollments.filter(academic_year_id=academic_year_id))
+            )
 
         serializer = StudentSerializer(students, many=True)
         return Response(serializer.data)
@@ -787,7 +1162,8 @@ def student_detail_view(request, pk):
 def cards_view(request):
     if request.method == 'GET':
         cards = Card.objects.select_related(
-            'student', 'enrollment', 'enrollment__faculty', 'enrollment__promotion', 'enrollment__academic_year'
+            'student', 'enrollment', 'enrollment__student', 'enrollment__faculty',
+            'enrollment__promotion', 'enrollment__academic_year'
         ).all()
         status_filter = request.query_params.get('status', 'active')
         search = request.query_params.get('search', '').strip()
@@ -816,9 +1192,9 @@ def cards_view(request):
             )
 
         if faculty_id:
-            cards = cards.filter(Q(enrollment__faculty_id=faculty_id) | Q(student__faculty_id=faculty_id))
+            cards = cards.filter(enrollment__faculty_id=faculty_id)
         if promotion_id:
-            cards = cards.filter(Q(enrollment__promotion_id=promotion_id) | Q(student__promotion_id=promotion_id))
+            cards = cards.filter(enrollment__promotion_id=promotion_id)
 
         serializer = CardSerializer(cards, many=True)
         return Response(serializer.data)
@@ -864,6 +1240,7 @@ def card_deactivate_view(request, pk):
 
     card.status = Card.STATUS_DISABLED
     card.save(update_fields=['status', 'is_active', 'deactivated_at'])
+    log_admin_action(request, "deactivate_card", card)
 
     return Response({'message': 'Carte désactivée'})
 
@@ -879,11 +1256,20 @@ def card_reactivate_view(request, pk):
     if card.status == Card.STATUS_ACTIVE:
         return Response({'message': 'Carte déjà active'})
 
-    card.status = Card.STATUS_ACTIVE
-    card.save(update_fields=['status', 'is_active', 'deactivated_at'])
+    if card.status == Card.STATUS_EXPIRED:
+        return Response(
+            {'error': 'Carte expirée avec l\'inscription. Créez une nouvelle carte.'},
+            status=400,
+        )
 
-    serializer = CardSerializer(card)
-    return Response(serializer.data)
+    serializer = CardSerializer(card, data={'status': Card.STATUS_ACTIVE}, partial=True)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=400)
+
+    card = serializer.save()
+    log_admin_action(request, "reactivate_card", card)
+
+    return Response(CardSerializer(card).data)
 
 
 # ========== JOURNAL D'ACCÈS RFID ==========
@@ -900,6 +1286,11 @@ def access_events_view(request):
         faculty_id = request.query_params.get('faculty_id')
         promotion_id = request.query_params.get('promotion_id')
         academic_year_id = request.query_params.get('academic_year_id')
+        page = request.query_params.get('page')
+        try:
+            page_size = min(int(request.query_params.get('page_size', 50)), 100)
+        except (TypeError, ValueError):
+            page_size = 50
 
         if result in [AccessEvent.RESULT_ALLOWED, AccessEvent.RESULT_DENIED]:
             events = events.filter(result=result)
@@ -912,14 +1303,49 @@ def access_events_view(request):
         if academic_year_id:
             events = events.filter(academic_year_id=academic_year_id)
 
+        if page:
+            paginator = Paginator(events, page_size)
+            current_page = paginator.get_page(page)
+            serializer = AccessEventSerializer(current_page.object_list, many=True)
+            return Response({
+                'results': serializer.data,
+                'count': paginator.count,
+                'page': current_page.number,
+                'page_size': page_size,
+                'num_pages': paginator.num_pages,
+                'has_next': current_page.has_next(),
+                'has_previous': current_page.has_previous(),
+            })
+
         serializer = AccessEventSerializer(events[:500], many=True)
         return Response(serializer.data)
 
     serializer = AccessEventSerializer(data=request.data)
     if serializer.is_valid():
-        serializer.save()
+        event = serializer.save()
+        log_admin_action(request, "create_access_event", event)
         return Response(serializer.data, status=201)
     return Response(serializer.errors, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def rfid_scan_view(request):
+    serializer = RFIDScanRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=400)
+
+    scan = process_rfid_scan(**serializer.validated_data)
+    event_data = AccessEventSerializer(scan["event"]).data
+    response = {
+        "allowed": scan["allowed"],
+        "result": scan["result"],
+        "reason": scan["reason"],
+        "message": scan["message"],
+        "duplicate": scan["duplicate"],
+        "event": event_data,
+    }
+    return Response(response, status=200 if scan["duplicate"] else 201)
 
 
 # ========== DASHBOARD ==========
@@ -929,35 +1355,56 @@ def dashboard_view(request):
     today = timezone.localdate()
 
     total_students = Student.objects.count()
-    total_cards = Card.objects.count()
-    total_faculties = Faculty.objects.count()
-    total_promotions = Promotion.objects.count()
+    active_students = Enrollment.objects.filter(
+        is_active=True,
+        faculty__is_active=True,
+        promotion__is_active=True,
+        academic_year__is_active=True,
+    ).values("student_id").distinct().count()
+    faculty_stats = Faculty.objects.aggregate(
+        total_faculties=Count("id"),
+        active_faculties=Count("id", filter=Q(is_active=True)),
+        inactive_faculties=Count("id", filter=Q(is_active=False)),
+    )
+    promotion_stats = Promotion.objects.aggregate(
+        total_promotions=Count("id"),
+        active_promotions=Count("id", filter=Q(is_active=True, faculty__is_active=True)),
+        inactive_promotions=Count("id", filter=Q(is_active=False) | Q(faculty__is_active=False)),
+    )
 
-    active_cards = Card.objects.filter(status=Card.STATUS_ACTIVE).count()
-    disabled_cards = Card.objects.filter(status=Card.STATUS_DISABLED).count()
-    expired_cards = Card.objects.filter(status=Card.STATUS_EXPIRED).count()
+    card_stats = Card.objects.aggregate(
+        total_cards=Count("id"),
+        active_cards=Count("id", filter=Q(status=Card.STATUS_ACTIVE)),
+        disabled_cards=Count("id", filter=Q(status=Card.STATUS_DISABLED)),
+        expired_cards=Count("id", filter=Q(status=Card.STATUS_EXPIRED)),
+        assigned_cards=Count("id", filter=Q(student__isnull=False) | Q(enrollment__isnull=False)),
+        unassigned_cards=Count("id", filter=Q(student__isnull=True, enrollment__isnull=True)),
+    )
 
-    assigned_cards = Card.objects.filter(Q(student__isnull=False) | Q(enrollment__isnull=False)).count()
-    unassigned_cards = Card.objects.filter(student__isnull=True, enrollment__isnull=True).count()
-
-    access_today = AccessEvent.objects.filter(created_at__date=today)
-    allowed_today = access_today.filter(result=AccessEvent.RESULT_ALLOWED).count()
-    denied_today = access_today.filter(result=AccessEvent.RESULT_DENIED).count()
-    denied_unpaid_today = access_today.filter(reason=AccessEvent.REASON_UNPAID_FEES).count()
-    denied_disabled_today = access_today.filter(reason=AccessEvent.REASON_DISABLED_CARD).count()
+    access_today = AccessEvent.objects.filter(created_at__date=today).aggregate(
+        allowed_today=Count("id", filter=Q(result=AccessEvent.RESULT_ALLOWED)),
+        denied_today=Count("id", filter=Q(result=AccessEvent.RESULT_DENIED)),
+        denied_unpaid_today=Count("id", filter=Q(reason=AccessEvent.REASON_UNPAID_FEES)),
+        denied_disabled_today=Count("id", filter=Q(reason=AccessEvent.REASON_DISABLED_CARD)),
+    )
 
     return Response({
         'total_students': total_students,
-        'total_faculties': total_faculties,
-        'total_promotions': total_promotions,
-        'total_cards': total_cards,
-        'active_cards': active_cards,
-        'disabled_cards': disabled_cards,
-        'expired_cards': expired_cards,
-        'assigned_cards': assigned_cards,
-        'unassigned_cards': unassigned_cards,
-        'allowed_today': allowed_today,
-        'denied_today': denied_today,
-        'denied_unpaid_today': denied_unpaid_today,
-        'denied_disabled_today': denied_disabled_today,
+        'active_students': active_students,
+        'total_faculties': faculty_stats['total_faculties'],
+        'active_faculties': faculty_stats['active_faculties'],
+        'inactive_faculties': faculty_stats['inactive_faculties'],
+        'total_promotions': promotion_stats['total_promotions'],
+        'active_promotions': promotion_stats['active_promotions'],
+        'inactive_promotions': promotion_stats['inactive_promotions'],
+        'total_cards': card_stats['total_cards'],
+        'active_cards': card_stats['active_cards'],
+        'disabled_cards': card_stats['disabled_cards'],
+        'expired_cards': card_stats['expired_cards'],
+        'assigned_cards': card_stats['assigned_cards'],
+        'unassigned_cards': card_stats['unassigned_cards'],
+        'allowed_today': access_today['allowed_today'],
+        'denied_today': access_today['denied_today'],
+        'denied_unpaid_today': access_today['denied_unpaid_today'],
+        'denied_disabled_today': access_today['denied_disabled_today'],
     })

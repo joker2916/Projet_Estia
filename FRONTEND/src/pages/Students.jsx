@@ -11,11 +11,7 @@ function Students({ embedded = false }) {
     last_name: "",
     email: "",
     matricule: "",
-    filiere: "",
-    niveau: "",
-    faculty: "",
-    promotion: "",
-    academic_year: "",
+    portal_password: "",
   });
   const [filters, setFilters] = useState({
     search: "",
@@ -37,20 +33,50 @@ function Students({ embedded = false }) {
     setStudents(res.data);
   };
 
-  const fetchLookups = async () => {
-    const [fRes, pRes, yRes] = await Promise.all([
-      api.get("faculties/", { params: { status: "active" } }),
-      api.get("promotions/", { params: { status: "active" } }),
-      api.get("academic-years/"),
-    ]);
-    setFaculties(fRes.data);
-    setPromotions(pRes.data);
-    setYears(yRes.data);
-  };
+  useEffect(() => {
+    let ignore = false;
+
+    const loadLookups = async () => {
+      const [fRes, pRes, yRes] = await Promise.all([
+        api.get("faculties/", { params: { status: "active" } }),
+        api.get("promotions/", { params: { status: "active" } }),
+        api.get("academic-years/"),
+      ]);
+      if (ignore) return;
+      setFaculties(fRes.data);
+      setPromotions(pRes.data);
+      setYears(yRes.data);
+    };
+
+    loadLookups();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   useEffect(() => {
-    fetchLookups();
-    fetchStudents();
+    let ignore = false;
+
+    const loadStudents = async () => {
+      const params = {};
+      if (filters.search) params.search = filters.search;
+      if (filters.faculty_id) params.faculty_id = filters.faculty_id;
+      if (filters.promotion_id) params.promotion_id = filters.promotion_id;
+      if (filters.academic_year_id)
+        params.academic_year_id = filters.academic_year_id;
+
+      const res = await api.get("students/", { params });
+      if (!ignore) {
+        setStudents(res.data);
+      }
+    };
+
+    loadStudents();
+
+    return () => {
+      ignore = true;
+    };
   }, [
     filters.search,
     filters.faculty_id,
@@ -74,11 +100,7 @@ function Students({ embedded = false }) {
       last_name: "",
       email: "",
       matricule: "",
-      filiere: "",
-      niveau: "",
-      faculty: "",
-      promotion: "",
-      academic_year: "",
+      portal_password: "",
     });
     setEditId(null);
     fetchStudents();
@@ -90,11 +112,7 @@ function Students({ embedded = false }) {
       last_name: student.last_name,
       email: student.email,
       matricule: student.matricule,
-      filiere: student.filiere,
-      niveau: student.niveau,
-      faculty: student.faculty || "",
-      promotion: student.promotion || "",
-      academic_year: student.academic_year || "",
+      portal_password: "",
     });
     setEditId(student.id);
   };
@@ -120,6 +138,12 @@ function Students({ embedded = false }) {
       }
     >
       {!embedded && <h1> Gestion des Étudiants</h1>}
+
+      <p style={hintStyle}>
+        Créez ici uniquement l&apos;identité de l&apos;étudiant (nom, matricule,
+        accès portail). Pour l&apos;affecter à une faculté et une promotion,
+        utilisez l&apos;onglet <strong>Inscriptions</strong>.
+      </p>
 
       <div
         style={{
@@ -189,7 +213,6 @@ function Students({ embedded = false }) {
         </select>
       </div>
 
-      {/* Formulaire */}
       <form
         onSubmit={handleSubmit}
         style={{
@@ -235,65 +258,13 @@ function Students({ embedded = false }) {
           style={inputStyle}
         />
         <input
-          name="filiere"
-          placeholder="Filière"
-          value={form.filiere}
+          name="portal_password"
+          type="password"
+          placeholder="Mot de passe portail étudiant"
+          value={form.portal_password}
           onChange={handleChange}
-          required
           style={inputStyle}
         />
-        <input
-          name="niveau"
-          placeholder="Niveau (L1, L2...)"
-          value={form.niveau}
-          onChange={handleChange}
-          required
-          style={inputStyle}
-        />
-        <select
-          name="faculty"
-          value={form.faculty}
-          onChange={handleChange}
-          style={inputStyle}
-        >
-          <option value="">-- Faculte --</option>
-          {faculties.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name}
-            </option>
-          ))}
-        </select>
-        <select
-          name="promotion"
-          value={form.promotion}
-          onChange={handleChange}
-          style={inputStyle}
-        >
-          <option value="">-- Promotion --</option>
-          {promotions
-            .filter(
-              (p) =>
-                !form.faculty || String(p.faculty) === String(form.faculty),
-            )
-            .map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-        </select>
-        <select
-          name="academic_year"
-          value={form.academic_year}
-          onChange={handleChange}
-          style={inputStyle}
-        >
-          <option value="">-- Annee academique --</option>
-          {years.map((y) => (
-            <option key={y.id} value={y.id}>
-              {y.name}
-            </option>
-          ))}
-        </select>
         <button
           type="submit"
           style={{
@@ -307,11 +278,10 @@ function Students({ embedded = false }) {
             fontSize: "16px",
           }}
         >
-          {editId ? "✏️ Modifier" : " Ajouter"}
+          {editId ? "✏️ Modifier" : " Ajouter l'étudiant"}
         </button>
       </form>
 
-      {/* Tableau */}
       <table
         style={{
           width: "100%",
@@ -326,10 +296,10 @@ function Students({ embedded = false }) {
             <th style={thStyle}>Prénom</th>
             <th style={thStyle}>Nom</th>
             <th style={thStyle}>Email</th>
+            <th style={thStyle}>Inscription active</th>
             <th style={thStyle}>Faculte</th>
             <th style={thStyle}>Promotion</th>
             <th style={thStyle}>Annee</th>
-            <th style={thStyle}>Niveau</th>
             <th style={thStyle}>Actions</th>
           </tr>
         </thead>
@@ -340,10 +310,12 @@ function Students({ embedded = false }) {
               <td style={tdStyle}>{s.first_name}</td>
               <td style={tdStyle}>{s.last_name}</td>
               <td style={tdStyle}>{s.email}</td>
+              <td style={tdStyle}>
+                {s.enrollment_status === "active" ? "Oui" : "Non"}
+              </td>
               <td style={tdStyle}>{s.faculty_name || "-"}</td>
               <td style={tdStyle}>{s.promotion_name || "-"}</td>
               <td style={tdStyle}>{s.academic_year_name || "-"}</td>
-              <td style={tdStyle}>{s.niveau}</td>
               <td style={tdStyle}>
                 <button onClick={() => handleEdit(s)} style={btnEdit}>
                   Modifier
@@ -371,6 +343,14 @@ const inputStyle = {
   borderRadius: "5px",
   border: "1px solid #ccc",
   fontSize: "14px",
+};
+const hintStyle = {
+  color: "#555",
+  backgroundColor: "#f5f9ff",
+  padding: "12px 16px",
+  borderRadius: "8px",
+  marginBottom: "16px",
+  lineHeight: 1.5,
 };
 const thStyle = { padding: "12px", textAlign: "left" };
 const tdStyle = { padding: "10px" };

@@ -5,11 +5,10 @@ import ContentCard from "../components/ContentCard";
 
 function Cards() {
   const [cards, setCards] = useState([]);
-  const [students, setStudents] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
   const [faculties, setFaculties] = useState([]);
   const [promotions, setPromotions] = useState([]);
-  const [form, setForm] = useState({ uid: "", student: "", enrollment: "" });
+  const [form, setForm] = useState({ uid: "", enrollment: "" });
   const [editId, setEditId] = useState(null);
   const [statusFilter, setStatusFilter] = useState("active");
   const [search, setSearch] = useState("");
@@ -28,30 +27,57 @@ function Cards() {
     setCards(res.data);
   };
 
-  const fetchLookups = async () => {
-    const [studentRes, enrollmentRes, facultyRes, promotionRes] =
-      await Promise.all([
-        api.get("students/"),
-        api.get("enrollments/", { params: { status: "active" } }),
-        api.get("faculties/", { params: { status: "active" } }),
-        api.get("promotions/", { params: { status: "active" } }),
-      ]);
-    setStudents(studentRes.data);
-    setEnrollments(enrollmentRes.data);
-    setFaculties(facultyRes.data);
-    setPromotions(promotionRes.data);
-  };
+  useEffect(() => {
+    let ignore = false;
+
+    const loadCards = async () => {
+      const res = await api.get("cards/", {
+        params: {
+          status: statusFilter,
+          search: search || undefined,
+          faculty_id: facultyFilter || undefined,
+          promotion_id: promotionFilter || undefined,
+        },
+      });
+      if (!ignore) {
+        setCards(res.data);
+      }
+    };
+
+    loadCards();
+
+    return () => {
+      ignore = true;
+    };
+  }, [statusFilter, search, facultyFilter, promotionFilter]);
 
   useEffect(() => {
-    fetchCards();
-    fetchLookups();
-  }, [statusFilter, search, facultyFilter, promotionFilter]);
+    let ignore = false;
+
+    const loadLookups = async () => {
+      const [enrollmentRes, facultyRes, promotionRes] =
+        await Promise.all([
+          api.get("enrollments/", { params: { status: "active" } }),
+          api.get("faculties/", { params: { status: "active" } }),
+          api.get("promotions/", { params: { status: "active" } }),
+        ]);
+      if (ignore) return;
+      setEnrollments(enrollmentRes.data);
+      setFaculties(facultyRes.data);
+      setPromotions(promotionRes.data);
+    };
+
+    loadLookups();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     const data = {
       uid: form.uid,
-      student: form.student || null,
       enrollment: form.enrollment || null,
     };
     if (editId) {
@@ -59,7 +85,7 @@ function Cards() {
     } else {
       await api.post("cards/", data);
     }
-    setForm({ uid: "", student: "", enrollment: "" });
+    setForm({ uid: "", enrollment: "" });
     setEditId(null);
     fetchCards();
   };
@@ -67,7 +93,6 @@ function Cards() {
   const handleEdit = (card) => {
     setForm({
       uid: card.uid,
-      student: card.student || "",
       enrollment: card.enrollment || "",
     });
     setEditId(card.id);
@@ -78,7 +103,7 @@ function Cards() {
       await api.post(`cards/${id}/deactivate/`);
       if (editId === id) {
         setEditId(null);
-        setForm({ uid: "", student: "", enrollment: "" });
+        setForm({ uid: "", enrollment: "" });
       }
       fetchCards();
     }
@@ -168,60 +193,50 @@ function Cards() {
         </select>
       </div>
 
-      <ContentCard
-        padding="20px"
-        style={{
-          display: "flex",
-          gap: "10px",
-          marginBottom: "30px",
-          alignItems: "center",
-        }}
-      >
-        <input
-          placeholder="UID de la carte"
-          value={form.uid}
-          onChange={(e) => setForm({ ...form, uid: e.target.value })}
-          required
-          style={inputStyle}
-        />
-        <select
-          value={form.student}
-          onChange={(e) => setForm({ ...form, student: e.target.value })}
-          style={inputStyle}
-        >
-          <option value="">-- Aucun étudiant --</option>
-          {students.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.first_name} {s.last_name} ({s.matricule})
-            </option>
-          ))}
-        </select>
-        <select
-          value={form.enrollment}
-          onChange={(e) => setForm({ ...form, enrollment: e.target.value })}
-          style={inputStyle}
-        >
-          <option value="">-- Aucune inscription --</option>
-          {enrollments.map((enr) => (
-            <option key={enr.id} value={enr.id}>
-              {enr.student_name} / {enr.promotion_name} /{" "}
-              {enr.academic_year_name}
-            </option>
-          ))}
-        </select>
-        <button
-          type="submit"
+      <ContentCard padding="20px" style={{ marginBottom: "30px" }}>
+        <form
+          onSubmit={handleSubmit}
           style={{
-            padding: "12px 20px",
-            backgroundColor: editId ? "#ff9800" : "#1976d2",
-            color: "white",
-            border: "none",
-            borderRadius: "5px",
-            cursor: "pointer",
+            display: "flex",
+            gap: "10px",
+            alignItems: "center",
           }}
         >
-          {editId ? " Modifier" : " Ajouter"}
-        </button>
+          <input
+            placeholder="UID de la carte"
+            value={form.uid}
+            onChange={(e) => setForm({ ...form, uid: e.target.value })}
+            required
+            style={inputStyle}
+          />
+          <select
+            value={form.enrollment}
+            onChange={(e) => setForm({ ...form, enrollment: e.target.value })}
+            required
+            style={inputStyle}
+          >
+            <option value="">-- Inscription active --</option>
+            {enrollments.map((enr) => (
+              <option key={enr.id} value={enr.id}>
+                {enr.student_name} / {enr.promotion_name} /{" "}
+                {enr.academic_year_name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            style={{
+              padding: "12px 20px",
+              backgroundColor: editId ? "#ff9800" : "#1976d2",
+              color: "white",
+              border: "none",
+              borderRadius: "5px",
+              cursor: "pointer",
+            }}
+          >
+            {editId ? " Modifier" : " Ajouter"}
+          </button>
+        </form>
       </ContentCard>
 
       <ContentCard padding="0" style={{ overflowX: "auto" }}>

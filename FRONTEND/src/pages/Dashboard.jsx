@@ -6,8 +6,13 @@ import ContentCard from "../components/ContentCard";
 function Dashboard() {
   const [stats, setStats] = useState({
     total_students: 0,
+    active_students: 0,
     total_faculties: 0,
+    active_faculties: 0,
+    inactive_faculties: 0,
     total_promotions: 0,
+    active_promotions: 0,
+    inactive_promotions: 0,
     total_cards: 0,
     active_cards: 0,
     disabled_cards: 0,
@@ -49,17 +54,17 @@ function Dashboard() {
       >
         <StatCard
           title="Etudiants"
-          value={stats.total_students}
+          value={stats.active_students || stats.total_students}
           color="#1976d2"
         />
         <StatCard
-          title="Facultes"
-          value={stats.total_faculties}
+          title="Facultes actives"
+          value={stats.active_faculties ?? stats.total_faculties}
           color="#8e24aa"
         />
         <StatCard
-          title="Promotions"
-          value={stats.total_promotions}
+          title="Promotions actives"
+          value={stats.active_promotions ?? stats.total_promotions}
           color="#3949ab"
         />
         <StatCard
@@ -102,6 +107,16 @@ function Dashboard() {
           gap: "20px",
         }}
       >
+        <StatCard
+          title="Facultes inactives"
+          value={stats.inactive_faculties}
+          color="#6d4c41"
+        />
+        <StatCard
+          title="Promotions inactives"
+          value={stats.inactive_promotions}
+          color="#5d4037"
+        />
         <StatCard
           title="Acces Autorises (aujourd'hui)"
           value={stats.allowed_today}

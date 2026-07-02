@@ -4,6 +4,11 @@ from . import views
 urlpatterns = [
     # Auth
     path('login/', views.login_view, name='login'),
+    path('student/login/', views.student_login_view, name='student-login'),
+    path('student/portal/', views.student_portal_view, name='student-portal'),
+    path('professor/login/', views.professor_login_view, name='professor-login'),
+    path('professor/portal/', views.professor_portal_view, name='professor-portal'),
+    path('professor/cpt/', views.professor_cpt_view, name='professor-cpt'),
 
     # Dashboard
     path('dashboard/', views.dashboard_view, name='dashboard'),
@@ -23,6 +28,8 @@ urlpatterns = [
     path('settings/users/<int:pk>/toggle/', views.user_toggle_view, name='user-toggle'),
     path('settings/users/<int:pk>/assign-role/', views.user_assign_role_view, name='user-assign-role'),
     path('settings/users/<int:pk>/reset-password/', views.user_reset_password_view, name='user-reset-password'),
+    path('settings/professors/', views.professors_view, name='professors'),
+    path('settings/professors/<int:pk>/', views.professor_detail_view, name='professor-detail'),
 
     # RFID
     path('settings/rfid/', views.rfid_settings_view, name='rfid-settings'),
@@ -65,6 +72,9 @@ urlpatterns = [
     path('cards/<int:pk>/', views.card_detail_view, name='card-detail'),
     path('cards/<int:pk>/deactivate/', views.card_deactivate_view, name='card-deactivate'),
     path('cards/<int:pk>/reactivate/', views.card_reactivate_view, name='card-reactivate'),
+
+    # Scan RFID embarqué
+    path('rfid/scan/', views.rfid_scan_view, name='rfid-scan'),
 
     # Accès RFID
     path('access-events/', views.access_events_view, name='access-events'),

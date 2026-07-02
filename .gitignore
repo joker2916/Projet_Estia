@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.sqlite3-journal
+.venv/
+venv/
+
+.env
+.env.*
+!.env.example
+
+BACKEND/media/
+
+FRONTEND/node_modules/
+FRONTEND/dist/

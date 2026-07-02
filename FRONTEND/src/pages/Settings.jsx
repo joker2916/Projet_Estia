@@ -12,11 +12,19 @@ function Settings() {
   // --- Utilisateurs & Rôles ---
   const [roles, setRoles] = useState([]);
   const [permissions, setPermissions] = useState([]);
+  const [professors, setProfessors] = useState([]);
+  const [promotions, setPromotions] = useState([]);
   const [newRoleName, setNewRoleName] = useState("");
   const [newPermission, setNewPermission] = useState({
     code: "",
     label: "",
     module: "",
+  });
+  const [newProfessor, setNewProfessor] = useState({
+    username: "",
+    email: "",
+    password: "prof123",
+    promotion_ids: [],
   });
   const [users, setUsers] = useState([]);
 
@@ -46,15 +54,25 @@ function Settings() {
   const loadAllSettings = async () => {
     setLoading(true);
     try {
-      const [uniRes, rolesRes, permissionsRes, usersRes, accessRes, notifRes] =
-        await Promise.all([
-          api.get("settings/university/"),
-          api.get("settings/roles/"),
-          api.get("settings/permissions/"),
-          api.get("settings/users/"),
-          api.get("settings/access/"),
-          api.get("settings/notifications/"),
-        ]);
+      const [
+        uniRes,
+        rolesRes,
+        permissionsRes,
+        usersRes,
+        professorsRes,
+        promotionsRes,
+        accessRes,
+        notifRes,
+      ] = await Promise.all([
+        api.get("settings/university/"),
+        api.get("settings/roles/"),
+        api.get("settings/permissions/"),
+        api.get("settings/users/"),
+        api.get("settings/professors/"),
+        api.get("promotions/", { params: { status: "active" } }),
+        api.get("settings/access/"),
+        api.get("settings/notifications/"),
+      ]);
 
       // Info générale
       setUniversityName(uniRes.data.name || "");
@@ -64,6 +82,8 @@ function Settings() {
       setRoles(rolesRes.data);
       setPermissions(permissionsRes.data);
       setUsers(usersRes.data);
+      setProfessors(professorsRes.data);
+      setPromotions(promotionsRes.data);
 
       // Accès
       setAccessStart(accessRes.data.access_start);
@@ -109,7 +129,7 @@ function Settings() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       showMessage(" Info générale sauvegardée !");
-    } catch (err) {
+    } catch {
       showMessage(" Erreur de sauvegarde");
     }
   };
@@ -125,7 +145,7 @@ function Settings() {
         setRoles([...roles, res.data]);
         setNewRoleName("");
         showMessage(" Rôle ajouté !");
-      } catch (err) {
+      } catch {
         showMessage(" Erreur: ce rôle existe peut-être déjà");
       }
     }
@@ -140,7 +160,7 @@ function Settings() {
       });
       setRoles(roles.map((r) => (r.id === roleId ? res.data : r)));
       showMessage(" Rôle mis à jour !");
-    } catch (err) {
+    } catch {
       showMessage(" Erreur mise à jour rôle");
     }
   };
@@ -159,7 +179,7 @@ function Settings() {
         permission_codes: newPermissions,
       });
       setRoles(roles.map((r) => (r.id === roleId ? res.data : r)));
-    } catch (err) {
+    } catch {
       showMessage(" Erreur mise à jour permissions");
     }
   };
@@ -173,7 +193,7 @@ function Settings() {
         ),
       );
       showMessage(" Statut utilisateur mis à jour !");
-    } catch (err) {
+    } catch {
       showMessage(" Erreur mise à jour utilisateur");
     }
   };
@@ -186,7 +206,7 @@ function Settings() {
           password: newPassword,
         });
         showMessage(` Mot de passe de ${username} réinitialisé !`);
-      } catch (err) {
+      } catch {
         showMessage(" Erreur réinitialisation mot de passe");
       }
     }
@@ -203,7 +223,7 @@ function Settings() {
       );
       setUsers(users.map((u) => (u.id === userId ? res.data : u)));
       showMessage("✅ Rôle utilisateur mis à jour");
-    } catch (err) {
+    } catch {
       showMessage("❌ Erreur affectation du rôle");
     }
   };
@@ -217,7 +237,7 @@ function Settings() {
         block_unpaid_fees: blockUnpaidFees,
       });
       showMessage(" Règles d'accès sauvegardées !");
-    } catch (err) {
+    } catch {
       showMessage(" Erreur sauvegarde règles d'accès");
     }
   };
@@ -232,7 +252,7 @@ function Settings() {
         notify_unpaid_fees: notifyUnpaidFees,
       });
       showMessage(" Notifications sauvegardées !");
-    } catch (err) {
+    } catch {
       showMessage(" Erreur sauvegarde notifications");
     }
   };
@@ -251,7 +271,7 @@ function Settings() {
       await api.post("settings/roles/bootstrap-direction/");
       await refreshRolesAndPermissions();
       showMessage("✅ Rôles de la Direction initialisés");
-    } catch (err) {
+    } catch {
       showMessage("❌ Erreur lors de l'initialisation des rôles Direction");
     }
   };
@@ -272,7 +292,7 @@ function Settings() {
       setNewPermission({ code: "", label: "", module: "" });
       await refreshRolesAndPermissions();
       showMessage("✅ Permission ajoutée");
-    } catch (err) {
+    } catch {
       showMessage(
         "❌ Erreur ajout permission (code possiblement déjà utilisé)",
       );
@@ -286,8 +306,34 @@ function Settings() {
       });
       await refreshRolesAndPermissions();
       showMessage("✅ Permission mise à jour");
-    } catch (err) {
+    } catch {
       showMessage("❌ Erreur mise à jour permission");
+    }
+  };
+
+  const handleAddProfessor = async () => {
+    if (!newProfessor.username.trim()) {
+      showMessage("Nom utilisateur professeur requis");
+      return;
+    }
+    try {
+      const res = await api.post("settings/professors/", {
+        username: newProfessor.username.trim(),
+        email: newProfessor.email.trim(),
+        password: newProfessor.password,
+        promotion_ids: newProfessor.promotion_ids.map(Number),
+        active: true,
+      });
+      setProfessors([...professors, res.data]);
+      setNewProfessor({
+        username: "",
+        email: "",
+        password: "prof123",
+        promotion_ids: [],
+      });
+      showMessage("Professeur ajouté");
+    } catch {
+      showMessage("Erreur création professeur");
     }
   };
 
@@ -753,6 +799,90 @@ function Settings() {
                       </button>
                     </div>
                   </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <h3 style={{ ...subTitle, marginTop: "30px" }}>
+            Professeurs et promotions affectées
+          </h3>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr 2fr auto",
+              gap: "10px",
+              marginBottom: "15px",
+            }}
+          >
+            <input
+              type="text"
+              placeholder="Nom utilisateur"
+              value={newProfessor.username}
+              onChange={(e) =>
+                setNewProfessor({ ...newProfessor, username: e.target.value })
+              }
+              style={inputStyle}
+            />
+            <input
+              type="email"
+              placeholder="Email"
+              value={newProfessor.email}
+              onChange={(e) =>
+                setNewProfessor({ ...newProfessor, email: e.target.value })
+              }
+              style={inputStyle}
+            />
+            <input
+              type="text"
+              placeholder="Mot de passe"
+              value={newProfessor.password}
+              onChange={(e) =>
+                setNewProfessor({ ...newProfessor, password: e.target.value })
+              }
+              style={inputStyle}
+            />
+            <select
+              multiple
+              value={newProfessor.promotion_ids}
+              onChange={(e) =>
+                setNewProfessor({
+                  ...newProfessor,
+                  promotion_ids: Array.from(e.target.selectedOptions).map(
+                    (option) => option.value,
+                  ),
+                })
+              }
+              style={{ ...inputStyle, minHeight: "90px" }}
+            >
+              {promotions.map((promotion) => (
+                <option key={promotion.id} value={promotion.id}>
+                  {promotion.name} / {promotion.faculty_name}
+                </option>
+              ))}
+            </select>
+            <button onClick={handleAddProfessor} style={btnPrimary}>
+              Ajouter
+            </button>
+          </div>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Professeur</th>
+                <th style={thStyle}>Promotions affectées</th>
+                <th style={thStyle}>Statut</th>
+              </tr>
+            </thead>
+            <tbody>
+              {professors.map((professor) => (
+                <tr key={professor.id}>
+                  <td style={tdStyle}>{professor.username}</td>
+                  <td style={tdStyle}>
+                    {professor.promotion_details
+                      .map((promotion) => promotion.name)
+                      .join(", ") || "-"}
+                  </td>
+                  <td style={tdStyle}>{professor.active ? "Actif" : "Inactif"}</td>
                 </tr>
               ))}
             </tbody>

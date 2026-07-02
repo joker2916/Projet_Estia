@@ -26,6 +26,8 @@ function Academics() {
     name: "",
     code: "",
     level: "",
+    course_start_date: "",
+    course_end_date: "",
   });
   const [enrollmentForm, setEnrollmentForm] = useState({
     student: "",
@@ -62,11 +64,31 @@ function Academics() {
   };
 
   useEffect(() => {
-    fetchFaculties();
-    fetchYears();
-    fetchPromotions();
-    fetchStudents();
-    fetchEnrollments();
+    let ignore = false;
+
+    const loadInitialData = async () => {
+      const [facultiesRes, yearsRes, promotionsRes, studentsRes, enrollmentsRes] =
+        await Promise.all([
+          api.get("faculties/", { params: { status: "all" } }),
+          api.get("academic-years/"),
+          api.get("promotions/", { params: { status: "all" } }),
+          api.get("students/"),
+          api.get("enrollments/", { params: { status: "all" } }),
+        ]);
+
+      if (ignore) return;
+      setFaculties(facultiesRes.data);
+      setYears(yearsRes.data);
+      setPromotions(promotionsRes.data);
+      setStudents(studentsRes.data);
+      setEnrollments(enrollmentsRes.data);
+    };
+
+    loadInitialData();
+
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   const handleCreateFaculty = async (e) => {
@@ -83,6 +105,8 @@ function Academics() {
       await api.post(`faculties/${faculty.id}/reactivate/`);
     }
     fetchFaculties();
+    fetchPromotions();
+    fetchEnrollments();
   };
 
   const handleCreateYear = async (e) => {
@@ -104,6 +128,8 @@ function Academics() {
       name: "",
       code: "",
       level: "",
+      course_start_date: "",
+      course_end_date: "",
     });
     fetchPromotions();
   };
@@ -145,12 +171,12 @@ function Academics() {
       <div style={overviewGrid}>
         <OverviewCard
           label="Facultes"
-          value={faculties.length}
+          value={faculties.filter((faculty) => faculty.is_active).length}
           color="#1565c0"
         />
         <OverviewCard
           label="Promotions"
-          value={promotions.length}
+          value={promotions.filter((promotion) => promotion.is_active).length}
           color="#2e7d32"
         />
         <OverviewCard
@@ -328,6 +354,11 @@ function Academics() {
 
       {tab === "promotions" && (
         <Section title="Promotions">
+          <p style={hintStyle}>
+            Definissez la periode de cours de la promotion. Les inscriptions
+            des etudiants restent valides uniquement pendant cette periode
+            pour le pointage RFID et les rapports d&apos;assiduite.
+          </p>
           <form onSubmit={handleCreatePromotion} style={formGrid3}>
             <select
               value={promotionForm.faculty}
@@ -338,11 +369,13 @@ function Academics() {
               style={inputStyle}
             >
               <option value="">-- Faculte --</option>
-              {faculties.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
+              {faculties
+                .filter((f) => f.is_active)
+                .map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
             </select>
             <input
               placeholder="Nom (ex: L3 Informatique)"
@@ -370,6 +403,32 @@ function Academics() {
               }
               style={inputStyle}
             />
+            <input
+              type="date"
+              value={promotionForm.course_start_date}
+              onChange={(e) =>
+                setPromotionForm({
+                  ...promotionForm,
+                  course_start_date: e.target.value,
+                })
+              }
+              required
+              style={inputStyle}
+              title="Debut des cours"
+            />
+            <input
+              type="date"
+              value={promotionForm.course_end_date}
+              onChange={(e) =>
+                setPromotionForm({
+                  ...promotionForm,
+                  course_end_date: e.target.value,
+                })
+              }
+              required
+              style={inputStyle}
+              title="Fin des cours"
+            />
             <button type="submit" style={primaryBtn}>
               Ajouter
             </button>
@@ -382,6 +441,8 @@ function Academics() {
                 <th style={thStyle}>Code</th>
                 <th style={thStyle}>Faculte</th>
                 <th style={thStyle}>Niveau</th>
+                <th style={thStyle}>Debut cours</th>
+                <th style={thStyle}>Fin cours</th>
                 <th style={thStyle}>Statut</th>
                 <th style={thStyle}>Action</th>
               </tr>
@@ -393,6 +454,8 @@ function Academics() {
                   <td style={tdStyle}>{p.code}</td>
                   <td style={tdStyle}>{p.faculty_name}</td>
                   <td style={tdStyle}>{p.level || "-"}</td>
+                  <td style={tdStyle}>{p.course_start_date || "-"}</td>
+                  <td style={tdStyle}>{p.course_end_date || "-"}</td>
                   <td style={tdStyle}>
                     {p.is_active ? "Active" : "Desactivee"}
                   </td>
@@ -415,6 +478,11 @@ function Academics() {
 
       {tab === "enrollments" && (
         <Section title="Inscriptions">
+          <p style={hintStyle}>
+            Inscrivez ici un étudiant dans une faculté, une promotion et une année
+            académique. C&apos;est cette inscription qui sert au pointage RFID et
+            aux rapports d&apos;assiduité.
+          </p>
           <form onSubmit={handleCreateEnrollment} style={formGrid3}>
             <select
               value={enrollmentForm.student}
@@ -446,11 +514,13 @@ function Academics() {
               style={inputStyle}
             >
               <option value="">-- Faculte --</option>
-              {faculties.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
+              {faculties
+                .filter((f) => f.is_active)
+                .map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
             </select>
             <select
               value={enrollmentForm.promotion}
@@ -467,8 +537,9 @@ function Academics() {
               {promotions
                 .filter(
                   (p) =>
-                    !enrollmentForm.faculty ||
-                    String(p.faculty) === String(enrollmentForm.faculty),
+                    p.is_active &&
+                    (!enrollmentForm.faculty ||
+                      String(p.faculty) === String(enrollmentForm.faculty)),
                 )
                 .map((p) => (
                   <option key={p.id} value={p.id}>
@@ -498,6 +569,17 @@ function Academics() {
               Inscrire
             </button>
           </form>
+          {enrollmentForm.promotion && (
+            <p style={{ ...hintStyle, marginTop: 0 }}>
+              {(() => {
+                const selected = promotions.find(
+                  (p) => String(p.id) === String(enrollmentForm.promotion),
+                );
+                if (!selected) return null;
+                return `Validite de l'inscription : du ${selected.course_start_date} au ${selected.course_end_date}`;
+              })()}
+            </p>
+          )}
 
           <table style={tableStyle}>
             <thead>
@@ -506,6 +588,9 @@ function Academics() {
                 <th style={thStyle}>Faculte</th>
                 <th style={thStyle}>Promotion</th>
                 <th style={thStyle}>Annee</th>
+                <th style={thStyle}>Validite debut</th>
+                <th style={thStyle}>Validite fin</th>
+                <th style={thStyle}>En periode</th>
                 <th style={thStyle}>Statut</th>
               </tr>
             </thead>
@@ -516,6 +601,9 @@ function Academics() {
                   <td style={tdStyle}>{e.faculty_name}</td>
                   <td style={tdStyle}>{e.promotion_name}</td>
                   <td style={tdStyle}>{e.academic_year_name}</td>
+                  <td style={tdStyle}>{e.valid_from || "-"}</td>
+                  <td style={tdStyle}>{e.valid_to || "-"}</td>
+                  <td style={tdStyle}>{e.is_within_validity ? "Oui" : "Non"}</td>
                   <td style={tdStyle}>{e.is_active ? "Active" : "Terminee"}</td>
                 </tr>
               ))}
@@ -597,6 +685,15 @@ const formGrid3 = {
   gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
   gap: "10px",
   marginBottom: "20px",
+};
+
+const hintStyle = {
+  color: "#555",
+  backgroundColor: "#f5f9ff",
+  padding: "12px 16px",
+  borderRadius: "8px",
+  marginBottom: "16px",
+  lineHeight: 1.5,
 };
 
 const inputStyle = {

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import api from "../api/axios";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 function Login() {
   const [username, setUsername] = useState("");
@@ -20,10 +20,25 @@ function Login() {
         password,
       });
 
+      if (res.data.account_type === "professor") {
+        localStorage.removeItem("token");
+        localStorage.removeItem("username");
+        localStorage.removeItem("studentToken");
+        localStorage.removeItem("studentName");
+        localStorage.setItem("professorToken", res.data.token);
+        localStorage.setItem("professorName", res.data.username);
+        navigate("/professor");
+        return;
+      }
+
+      localStorage.removeItem("professorToken");
+      localStorage.removeItem("professorName");
+      localStorage.removeItem("studentToken");
+      localStorage.removeItem("studentName");
       localStorage.setItem("token", res.data.token);
       localStorage.setItem("username", res.data.username);
       navigate("/");
-    } catch (err) {
+    } catch {
       setError("❌ Identifiants invalides");
     } finally {
       setLoading(false);
@@ -100,6 +115,10 @@ function Login() {
         >
           {loading ? "Connexion..." : "Se connecter"}
         </button>
+        <div style={{ marginTop: "18px", display: "grid", gap: "6px" }}>
+          <Link to="/student/login">Espace étudiant</Link>
+          <Link to="/professor/login">Espace professeur</Link>
+        </div>
       </form>
     </div>
   );
