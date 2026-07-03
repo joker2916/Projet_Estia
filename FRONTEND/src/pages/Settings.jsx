@@ -9,24 +9,15 @@ function Settings() {
   const [logo, setLogo] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
 
-  // --- Utilisateurs & Rôles ---
-  const [roles, setRoles] = useState([]);
-  const [permissions, setPermissions] = useState([]);
+  // --- Professeurs ---
   const [professors, setProfessors] = useState([]);
   const [promotions, setPromotions] = useState([]);
-  const [newRoleName, setNewRoleName] = useState("");
-  const [newPermission, setNewPermission] = useState({
-    code: "",
-    label: "",
-    module: "",
-  });
   const [newProfessor, setNewProfessor] = useState({
     username: "",
     email: "",
     password: "prof123",
     promotion_ids: [],
   });
-  const [users, setUsers] = useState([]);
 
   // --- Règles d'accès ---
   const [accessStart, setAccessStart] = useState("07:00");
@@ -54,34 +45,18 @@ function Settings() {
   const loadAllSettings = async () => {
     setLoading(true);
     try {
-      const [
-        uniRes,
-        rolesRes,
-        permissionsRes,
-        usersRes,
-        professorsRes,
-        promotionsRes,
-        accessRes,
-        notifRes,
-      ] = await Promise.all([
-        api.get("settings/university/"),
-        api.get("settings/roles/"),
-        api.get("settings/permissions/"),
-        api.get("settings/users/"),
-        api.get("settings/professors/"),
-        api.get("promotions/", { params: { status: "active" } }),
-        api.get("settings/access/"),
-        api.get("settings/notifications/"),
-      ]);
+      const [uniRes, professorsRes, promotionsRes, accessRes, notifRes] =
+        await Promise.all([
+          api.get("settings/university/"),
+          api.get("settings/professors/"),
+          api.get("promotions/", { params: { status: "active" } }),
+          api.get("settings/access/"),
+          api.get("settings/notifications/"),
+        ]);
 
-      // Info générale
       setUniversityName(uniRes.data.name || "");
       if (uniRes.data.logo) setLogoPreview(uniRes.data.logo);
 
-      // Rôles & Utilisateurs
-      setRoles(rolesRes.data);
-      setPermissions(permissionsRes.data);
-      setUsers(usersRes.data);
       setProfessors(professorsRes.data);
       setPromotions(promotionsRes.data);
 
@@ -134,100 +109,6 @@ function Settings() {
     }
   };
 
-  const handleAddRole = async () => {
-    if (newRoleName.trim()) {
-      try {
-        const res = await api.post("settings/roles/", {
-          name: newRoleName.trim(),
-          permission_codes: [],
-          active: true,
-        });
-        setRoles([...roles, res.data]);
-        setNewRoleName("");
-        showMessage(" Rôle ajouté !");
-      } catch {
-        showMessage(" Erreur: ce rôle existe peut-être déjà");
-      }
-    }
-  };
-
-  const handleToggleRole = async (roleId) => {
-    const role = roles.find((r) => r.id === roleId);
-    try {
-      const res = await api.put(`settings/roles/${roleId}/`, {
-        name: role.name,
-        active: !role.active,
-      });
-      setRoles(roles.map((r) => (r.id === roleId ? res.data : r)));
-      showMessage(" Rôle mis à jour !");
-    } catch {
-      showMessage(" Erreur mise à jour rôle");
-    }
-  };
-
-  const handleTogglePermission = async (roleId, permission) => {
-    const role = roles.find((r) => r.id === roleId);
-    const rolePermissions =
-      role.permission_codes_read || role.permissions || [];
-    const has = rolePermissions.includes(permission);
-    const newPermissions = has
-      ? rolePermissions.filter((p) => p !== permission)
-      : [...rolePermissions, permission];
-
-    try {
-      const res = await api.put(`settings/roles/${roleId}/`, {
-        permission_codes: newPermissions,
-      });
-      setRoles(roles.map((r) => (r.id === roleId ? res.data : r)));
-    } catch {
-      showMessage(" Erreur mise à jour permissions");
-    }
-  };
-
-  const handleToggleUser = async (userId) => {
-    try {
-      const res = await api.put(`settings/users/${userId}/toggle/`);
-      setUsers(
-        users.map((u) =>
-          u.id === userId ? { ...u, active: res.data.active } : u,
-        ),
-      );
-      showMessage(" Statut utilisateur mis à jour !");
-    } catch {
-      showMessage(" Erreur mise à jour utilisateur");
-    }
-  };
-
-  const handleResetPassword = async (userId, username) => {
-    const newPassword = prompt(`Nouveau mot de passe pour ${username} :`);
-    if (newPassword) {
-      try {
-        await api.post(`settings/users/${userId}/reset-password/`, {
-          password: newPassword,
-        });
-        showMessage(` Mot de passe de ${username} réinitialisé !`);
-      } catch {
-        showMessage(" Erreur réinitialisation mot de passe");
-      }
-    }
-  };
-
-  const handleAssignRole = async (userId, nextRoleId) => {
-    try {
-      const payload = {
-        role_id: nextRoleId === "" ? null : Number(nextRoleId),
-      };
-      const res = await api.put(
-        `settings/users/${userId}/assign-role/`,
-        payload,
-      );
-      setUsers(users.map((u) => (u.id === userId ? res.data : u)));
-      showMessage("✅ Rôle utilisateur mis à jour");
-    } catch {
-      showMessage("❌ Erreur affectation du rôle");
-    }
-  };
-
   const handleSaveAccess = async () => {
     try {
       await api.put("settings/access/", {
@@ -254,60 +135,6 @@ function Settings() {
       showMessage(" Notifications sauvegardées !");
     } catch {
       showMessage(" Erreur sauvegarde notifications");
-    }
-  };
-
-  const refreshRolesAndPermissions = async () => {
-    const [rolesRes, permissionsRes] = await Promise.all([
-      api.get("settings/roles/"),
-      api.get("settings/permissions/"),
-    ]);
-    setRoles(rolesRes.data);
-    setPermissions(permissionsRes.data);
-  };
-
-  const handleBootstrapDirectionRoles = async () => {
-    try {
-      await api.post("settings/roles/bootstrap-direction/");
-      await refreshRolesAndPermissions();
-      showMessage("✅ Rôles de la Direction initialisés");
-    } catch {
-      showMessage("❌ Erreur lors de l'initialisation des rôles Direction");
-    }
-  };
-
-  const handleAddPermission = async () => {
-    if (!newPermission.code.trim() || !newPermission.label.trim()) {
-      showMessage("❌ Code et libellé de permission requis");
-      return;
-    }
-
-    try {
-      await api.post("settings/permissions/", {
-        code: newPermission.code.trim(),
-        label: newPermission.label.trim(),
-        module: newPermission.module.trim(),
-        active: true,
-      });
-      setNewPermission({ code: "", label: "", module: "" });
-      await refreshRolesAndPermissions();
-      showMessage("✅ Permission ajoutée");
-    } catch {
-      showMessage(
-        "❌ Erreur ajout permission (code possiblement déjà utilisé)",
-      );
-    }
-  };
-
-  const handleTogglePermissionStatus = async (permission) => {
-    try {
-      await api.put(`settings/permissions/${permission.id}/`, {
-        active: !permission.active,
-      });
-      await refreshRolesAndPermissions();
-      showMessage("✅ Permission mise à jour");
-    } catch {
-      showMessage("❌ Erreur mise à jour permission");
     }
   };
 
@@ -339,7 +166,7 @@ function Settings() {
 
   const tabs = [
     { key: "general", label: " Info Générale" },
-    { key: "users", label: " Utilisateurs & Rôles" },
+    { key: "users", label: " Professeurs" },
     { key: "access", label: " Règles d'Accès" },
     { key: "notifications", label: " Notifications" },
   ];
@@ -502,311 +329,12 @@ function Settings() {
       {/* ========== UTILISATEURS & RÔLES ========== */}
       {activeSection === "users" && (
         <ContentCard padding="30px" style={sectionCard}>
-          <h2 style={sectionTitle}> Gestion des Utilisateurs & Rôles</h2>
+          <h2 style={sectionTitle}> Gestion des professeurs</h2>
           <p style={sectionDesc}>
-            Gérer les rôles, permissions et accès des utilisateurs
+            Creez des comptes professeur et affectez-les a une ou plusieurs
+            promotions.
           </p>
 
-          <h3 style={subTitle}> Rôles & Permissions</h3>
-          <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-            <input
-              type="text"
-              placeholder="Nouveau rôle..."
-              value={newRoleName}
-              onChange={(e) => setNewRoleName(e.target.value)}
-              style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
-            />
-            <button onClick={handleAddRole} style={btnPrimary}>
-              + Ajouter
-            </button>
-            <button
-              onClick={handleBootstrapDirectionRoles}
-              style={{ ...btnPrimary, backgroundColor: "#6a1b9a" }}
-            >
-              Initialiser Direction
-            </button>
-          </div>
-
-          {roles.map((role) => (
-            <div
-              key={role.id}
-              style={{
-                backgroundColor: role.active ? "#f9f9f9" : "#ffebee",
-                borderRadius: "10px",
-                padding: "15px",
-                marginBottom: "10px",
-                border: `1px solid ${role.active ? "#e0e0e0" : "#ef9a9a"}`,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "10px",
-                }}
-              >
-                <span style={{ fontWeight: "bold", fontSize: "16px" }}>
-                  {role.name}
-                  {!role.active && (
-                    <span
-                      style={{
-                        color: "#c62828",
-                        fontSize: "12px",
-                        marginLeft: "10px",
-                      }}
-                    >
-                      DÉSACTIVÉ
-                    </span>
-                  )}
-                </span>
-                <button
-                  onClick={() => handleToggleRole(role.id)}
-                  style={{
-                    ...btnSmall,
-                    backgroundColor: role.active ? "#ffcdd2" : "#c8e6c9",
-                    color: role.active ? "#c62828" : "#2e7d32",
-                  }}
-                >
-                  {role.active ? "Désactiver" : "Activer"}
-                </button>
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                {permissions.map((perm) => {
-                  const rolePermissions =
-                    role.permission_codes_read || role.permissions || [];
-                  const isChecked = rolePermissions.includes(perm.code);
-                  return (
-                    <label
-                      key={perm.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "5px",
-                        backgroundColor: isChecked ? "#e3f2fd" : "#f5f5f5",
-                        padding: "5px 10px",
-                        borderRadius: "20px",
-                        fontSize: "12px",
-                        cursor: "pointer",
-                        border: `1px solid ${isChecked ? "#90caf9" : "#e0e0e0"}`,
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() =>
-                          handleTogglePermission(role.id, perm.code)
-                        }
-                      />
-                      {perm.label}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-
-          <h3 style={{ ...subTitle, marginTop: "30px" }}>
-            {" "}
-            Catalogue des Permissions
-          </h3>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 2fr 1fr auto",
-              gap: "10px",
-              marginBottom: "15px",
-            }}
-          >
-            <input
-              type="text"
-              placeholder="Code (ex: view_reports)"
-              value={newPermission.code}
-              onChange={(e) =>
-                setNewPermission({ ...newPermission, code: e.target.value })
-              }
-              style={inputStyle}
-            />
-            <input
-              type="text"
-              placeholder="Libellé"
-              value={newPermission.label}
-              onChange={(e) =>
-                setNewPermission({ ...newPermission, label: e.target.value })
-              }
-              style={inputStyle}
-            />
-            <input
-              type="text"
-              placeholder="Module"
-              value={newPermission.module}
-              onChange={(e) =>
-                setNewPermission({ ...newPermission, module: e.target.value })
-              }
-              style={inputStyle}
-            />
-            <button onClick={handleAddPermission} style={btnPrimary}>
-              Ajouter
-            </button>
-          </div>
-
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>Code</th>
-                <th style={thStyle}>Libellé</th>
-                <th style={thStyle}>Module</th>
-                <th style={thStyle}>Statut</th>
-                <th style={thStyle}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {permissions.map((perm) => (
-                <tr key={perm.id}>
-                  <td style={tdStyle}>
-                    <strong>{perm.code}</strong>
-                  </td>
-                  <td style={tdStyle}>{perm.label}</td>
-                  <td style={tdStyle}>{perm.module || "-"}</td>
-                  <td style={tdStyle}>
-                    <span
-                      style={{
-                        backgroundColor: perm.active ? "#e8f5e9" : "#ffebee",
-                        color: perm.active ? "#2e7d32" : "#c62828",
-                        padding: "4px 12px",
-                        borderRadius: "20px",
-                        fontSize: "12px",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      {perm.active ? "Actif" : "Inactif"}
-                    </span>
-                  </td>
-                  <td style={tdStyle}>
-                    <button
-                      onClick={() => handleTogglePermissionStatus(perm)}
-                      style={{
-                        ...btnSmall,
-                        backgroundColor: perm.active ? "#ffcdd2" : "#c8e6c9",
-                        color: perm.active ? "#c62828" : "#2e7d32",
-                      }}
-                    >
-                      {perm.active ? "Désactiver" : "Activer"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <h3 style={{ ...subTitle, marginTop: "30px" }}> Utilisateurs</h3>
-          <table style={tableStyle}>
-            <thead>
-              <tr>
-                <th style={thStyle}>Utilisateur</th>
-                <th style={thStyle}>Rôle</th>
-                <th style={thStyle}>Statut</th>
-                <th style={thStyle}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => (
-                <tr key={user.id}>
-                  <td style={tdStyle}>
-                    <strong>{user.username}</strong>
-                  </td>
-                  <td style={tdStyle}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                      }}
-                    >
-                      <span
-                        style={{
-                          backgroundColor: "#e3f2fd",
-                          color: "#1976d2",
-                          padding: "4px 12px",
-                          borderRadius: "20px",
-                          fontSize: "12px",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        {user.role}
-                      </span>
-                      <select
-                        value={user.role_id ?? ""}
-                        onChange={(e) =>
-                          handleAssignRole(user.id, e.target.value)
-                        }
-                        style={{
-                          padding: "6px 10px",
-                          borderRadius: "6px",
-                          border: "1px solid #ddd",
-                          fontSize: "12px",
-                          backgroundColor: "#fff",
-                        }}
-                      >
-                        <option value="">Aucun rôle</option>
-                        {roles
-                          .filter((r) => r.active)
-                          .map((role) => (
-                            <option key={role.id} value={role.id}>
-                              {role.name}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                  </td>
-                  <td style={tdStyle}>
-                    <span
-                      style={{
-                        backgroundColor: user.active ? "#e8f5e9" : "#ffebee",
-                        color: user.active ? "#2e7d32" : "#c62828",
-                        padding: "4px 12px",
-                        borderRadius: "20px",
-                        fontSize: "12px",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      {user.active ? " Actif" : " Inactif"}
-                    </span>
-                  </td>
-                  <td style={tdStyle}>
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <button
-                        onClick={() => handleToggleUser(user.id)}
-                        style={{
-                          ...btnSmall,
-                          backgroundColor: user.active ? "#ffcdd2" : "#c8e6c9",
-                          color: user.active ? "#c62828" : "#2e7d32",
-                        }}
-                      >
-                        {user.active ? "Désactiver" : "Activer"}
-                      </button>
-                      <button
-                        onClick={() =>
-                          handleResetPassword(user.id, user.username)
-                        }
-                        style={{
-                          ...btnSmall,
-                          backgroundColor: "#fff3e0",
-                          color: "#e65100",
-                        }}
-                      >
-                        Reset MDP
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <h3 style={{ ...subTitle, marginTop: "30px" }}>
-            Professeurs et promotions affectées
-          </h3>
           <div
             style={{
               display: "grid",

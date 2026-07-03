@@ -1,3 +1,4 @@
+import random
 from datetime import date, time, timedelta
 
 from django.contrib.auth.models import User
@@ -5,6 +6,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
+from core.finance import mark_installment_paid, upsert_tuition_plan
 from core.models import (
     AccessEvent,
     AccessRules,
@@ -18,11 +20,61 @@ from core.models import (
     RFIDSettings,
     Role,
     Student,
-    StudentFinancialStatus,
     UserProfile,
 )
-from core.finance import mark_installment_paid, upsert_tuition_plan
 from core.views import ensure_default_permissions
+
+random.seed(2026)
+
+FACULTIES = [
+    ("GINFO", "Genie informatique"),
+    ("GIND", "Genie industriel"),
+    ("PO", "Parcours ouvert"),
+]
+LEVELS = ["L1", "L2", "L3"]
+STUDENTS_PER_PROMOTION = 22
+COURSE_START = date(2026, 1, 15)
+COURSE_END = date(2026, 12, 15)
+SEED_UNTIL = date(2026, 6, 30)
+
+FIRST_NAMES = [
+    "Amine", "Sarah", "Youssef", "Fatou", "Karim", "Awa", "Moussa", "Claire",
+    "Ibrahim", "Nadia", "Omar", "Leila", "Thomas", "Aicha", "David", "Mariam",
+    "Lucas", "Salma", "Noah", "Ines", "Adam", "Zoe", "Paul", "Rania", "Hugo",
+]
+LAST_NAMES = [
+    "Diallo", "Martin", "Kone", "Bernard", "Traore", "Petit", "Camara", "Robert",
+    "Sow", "Richard", "Ba", "Durand", "Sy", "Moreau", "Fofana", "Simon", "Keita",
+    "Laurent", "Cisse", "Garcia", "Ndiaye", "Roux", "Toure", "Blanc", "Sarr",
+]
+CPT_POSITIVE = [
+    "Participation active", "Bon comportement", "Travail de groupe exemplaire",
+    "Aide aux camarades", "Ponctualite exemplaire",
+]
+CPT_NEGATIVE = [
+    "Retard repetitif", "Telephone en cours", "Absence non justifiee",
+    "Bavardage", "Tenue non conforme",
+]
+TUITION_INSTALLMENTS = [
+    {"installment_number": 1, "label": "Tranche 1", "amount": "300.00", "due_date": "2026-02-15"},
+    {"installment_number": 2, "label": "Tranche 2", "amount": "300.00", "due_date": "2026-05-15"},
+    {"installment_number": 3, "label": "Tranche 3", "amount": "300.00", "due_date": "2026-08-15"},
+    {"installment_number": 4, "label": "Tranche 4", "amount": "300.00", "due_date": "2026-11-15"},
+]
+
+
+def weekdays_between(start_date, end_date):
+    current = start_date
+    while current <= end_date:
+        if current.weekday() < 5:
+            yield current
+        current += timedelta(days=1)
+
+
+def make_uid(faculty_code, level, index):
+    level_digit = LEVELS.index(level) + 1
+    base = sum(ord(char) for char in faculty_code) % 90 + 10
+    return f"{base:02X}{level_digit}{index:05X}"[:8]
 
 
 class Command(BaseCommand):
@@ -46,14 +98,6 @@ class Command(BaseCommand):
         profile.role = role
         profile.save(update_fields=["role"])
 
-        faculty, _ = Faculty.objects.update_or_create(
-            code="INFO",
-            defaults={"name": "Informatique", "is_active": True, "deactivated_at": None},
-        )
-        inactive_faculty, _ = Faculty.objects.update_or_create(
-            code="MNTC",
-            defaults={"name": "Management et Technologie", "is_active": False, "deactivated_at": timezone.now()},
-        )
         year, _ = AcademicYear.objects.update_or_create(
             name="2026",
             defaults={
@@ -63,175 +107,185 @@ class Command(BaseCommand):
                 "is_active": True,
             },
         )
-        promotion, _ = Promotion.objects.update_or_create(
-            faculty=faculty,
-            code="L1-INFO",
-            defaults={
-                "name": "Licence 1 Informatique",
-                "level": "L1",
-                "course_start_date": date(2026, 1, 15),
-                "course_end_date": date(2026, 12, 15),
-                "is_active": True,
-                "deactivated_at": None,
-            },
-        )
-        inactive_promotion, _ = Promotion.objects.update_or_create(
-            faculty=inactive_faculty,
-            code="L1-MNTC",
-            defaults={
-                "name": "Licence 1 MNTC",
-                "level": "L1",
-                "course_start_date": date(2026, 1, 15),
-                "course_end_date": date(2026, 12, 15),
-                "is_active": False,
-                "deactivated_at": timezone.now(),
-            },
+
+        Faculty.objects.filter(code__in=["INFO", "MNTC"]).update(
+            is_active=False,
+            deactivated_at=timezone.now(),
         )
 
-        students = [
-            ("ETSIA-001", "Jane", "Doe", "04A1B2C3", True, "student123"),
-            ("ETSIA-002", "John", "Smith", "04D4E5F6", False, "student123"),
-        ]
+        faculty_by_code = {}
+        promotions_by_key = {}
+        for fac_code, fac_name in FACULTIES:
+            faculty, _ = Faculty.objects.update_or_create(
+                code=fac_code,
+                defaults={"name": fac_name, "is_active": True, "deactivated_at": None},
+            )
+            faculty_by_code[fac_code] = faculty
+            for level in LEVELS:
+                promo_code = f"{level}-{fac_code}"
+                promotion, _ = Promotion.objects.update_or_create(
+                    faculty=faculty,
+                    code=promo_code,
+                    defaults={
+                        "name": f"{level} {fac_name}",
+                        "level": level,
+                        "course_start_date": COURSE_START,
+                        "course_end_date": COURSE_END,
+                        "is_active": True,
+                        "deactivated_at": None,
+                    },
+                )
+                promotions_by_key[(fac_code, level)] = promotion
+                upsert_tuition_plan(promotion, year, TUITION_INSTALLMENTS)
 
-        upsert_tuition_plan(
-            promotion,
-            year,
-            [
-                {
-                    "installment_number": 1,
-                    "label": "Tranche 1",
-                    "amount": "300.00",
-                    "due_date": "2026-02-15",
-                },
-                {
-                    "installment_number": 2,
-                    "label": "Tranche 2",
-                    "amount": "300.00",
-                    "due_date": "2026-05-15",
-                },
-                {
-                    "installment_number": 3,
-                    "label": "Tranche 3",
-                    "amount": "300.00",
-                    "due_date": "2026-08-15",
-                },
-                {
-                    "installment_number": 4,
-                    "label": "Tranche 4",
-                    "amount": "300.00",
-                    "due_date": "2026-11-15",
-                },
-            ],
-        )
-
-        created_cards = []
-        for matricule, first_name, last_name, uid, good_standing, password in students:
-            student, _ = Student.objects.update_or_create(
-                matricule=matricule,
-                defaults={
-                    "first_name": first_name,
-                    "last_name": last_name,
-                    "email": f"{matricule.lower()}@etsia.local",
-                    "faculty": faculty,
-                    "promotion": promotion,
-                    "academic_year": year,
-                },
+        professors = {}
+        for fac_code, fac_name in FACULTIES:
+            username = f"prof.{fac_code.lower()}"
+            user, prof_created = User.objects.get_or_create(
+                username=username,
+                defaults={"email": f"{username}@etsia.local"},
             )
-            student.set_portal_password(password)
-            student.save(update_fields=["password_hash"])
-            Enrollment.objects.filter(student=student, is_active=True).exclude(academic_year=year).update(
-                is_active=False,
-                ended_at=timezone.now(),
-            )
-            enrollment, _ = Enrollment.objects.update_or_create(
-                student=student,
-                academic_year=year,
-                defaults={
-                    "faculty": faculty,
-                    "promotion": promotion,
-                    "is_active": True,
-                    "ended_at": None,
-                },
-            )
-            if good_standing:
-                mark_installment_paid(enrollment, 1)
-                mark_installment_paid(enrollment, 2)
-            card, _ = Card.objects.update_or_create(
-                uid=uid,
-                defaults={
-                    "student": student,
-                    "enrollment": enrollment,
-                    "status": Card.STATUS_ACTIVE,
-                },
-            )
-            created_cards.append((card, enrollment, good_standing))
-
-        professor_user, created = User.objects.get_or_create(
-            username="prof.info",
-            defaults={"email": "prof.info@etsia.local"},
-        )
-        professor_user.set_password("prof123")
-        professor_user.save()
-        professor_profile, _ = ProfessorProfile.objects.get_or_create(user=professor_user)
-        professor_profile.active = True
-        professor_profile.save(update_fields=["active"])
-        professor_profile.promotions.set([promotion])
-
-        BehaviorPointEntry.objects.filter(recorded_by=professor_user).delete()
-        first_enrollment = Enrollment.objects.filter(promotion=promotion, is_active=True).first()
-        if first_enrollment:
-            BehaviorPointEntry.objects.create(
-                enrollment=first_enrollment,
-                student=first_enrollment.student,
-                recorded_by=professor_user,
-                points_delta=5,
-                note="Participation en cours",
-            )
-            BehaviorPointEntry.objects.create(
-                enrollment=first_enrollment,
-                student=first_enrollment.student,
-                recorded_by=professor_user,
-                points_delta=-2,
-                note="Retard non justifie",
-            )
+            user.set_password("prof123")
+            user.save()
+            professor_profile, _ = ProfessorProfile.objects.get_or_create(user=user)
+            professor_profile.active = True
+            professor_profile.save(update_fields=["active"])
+            faculty_promotions = [
+                promotions_by_key[(fac_code, level)] for level in LEVELS
+            ]
+            professor_profile.promotions.set(faculty_promotions)
+            professors[fac_code] = user
 
         AccessEvent.objects.filter(source="seed_demo").delete()
-        now = timezone.now()
-        for index, (card, enrollment, good_standing) in enumerate(created_cards, start=1):
-            event = AccessEvent.objects.create(
-                card=card,
-                raw_uid=card.uid,
-                request_id=f"seed-presence-{index}",
-                student=enrollment.student,
-                enrollment=enrollment,
-                faculty=enrollment.faculty,
-                promotion=enrollment.promotion,
-                academic_year=enrollment.academic_year,
-                result=AccessEvent.RESULT_ALLOWED if good_standing else AccessEvent.RESULT_DENIED,
-                reason=AccessEvent.REASON_NONE if good_standing else AccessEvent.REASON_UNPAID_FEES,
-                note="Demo présence" if good_standing else "Demo frais impayés",
-                source="seed_demo",
-            )
-            event.created_at = now - timedelta(days=index)
-            event.save(update_fields=["created_at"])
+        BehaviorPointEntry.objects.filter(
+            recorded_by__username__in=[f"prof.{code.lower()}" for code, _ in FACULTIES]
+        ).delete()
 
-        late_card, late_enrollment, _ = created_cards[0]
-        late_event = AccessEvent.objects.create(
-            card=late_card,
-            raw_uid=late_card.uid,
-            request_id="seed-late-1",
-            student=late_enrollment.student,
-            enrollment=late_enrollment,
-            faculty=late_enrollment.faculty,
-            promotion=late_enrollment.promotion,
-            academic_year=late_enrollment.academic_year,
-            result=AccessEvent.RESULT_ALLOWED,
-            reason=AccessEvent.REASON_NONE,
-            note="Demo retard",
-            source="seed_demo",
-        )
-        late_event.created_at = timezone.make_aware(timezone.datetime.combine(timezone.localdate(), time(8, 30)))
-        late_event.save(update_fields=["created_at"])
+        school_days = list(weekdays_between(COURSE_START, SEED_UNTIL))
+        total_students = 0
+        total_events = 0
+        total_cpt = 0
+        demo_students = []
+
+        name_index = 0
+        for fac_code, _fac_name in FACULTIES:
+            faculty = faculty_by_code[fac_code]
+            professor_user = professors[fac_code]
+            for level in LEVELS:
+                promotion = promotions_by_key[(fac_code, level)]
+                for student_num in range(1, STUDENTS_PER_PROMOTION + 1):
+                    matricule = f"{fac_code}-{level}-{student_num:03d}"
+                    first_name = FIRST_NAMES[name_index % len(FIRST_NAMES)]
+                    last_name = LAST_NAMES[(name_index * 3) % len(LAST_NAMES)]
+                    name_index += 1
+
+                    student, _ = Student.objects.update_or_create(
+                        matricule=matricule,
+                        defaults={
+                            "first_name": first_name,
+                            "last_name": last_name,
+                            "email": f"{matricule.lower()}@etsia.local",
+                            "faculty": faculty,
+                            "promotion": promotion,
+                            "academic_year": year,
+                        },
+                    )
+                    student.set_portal_password("student123")
+                    student.save(update_fields=["password_hash"])
+
+                    Enrollment.objects.filter(student=student, is_active=True).exclude(
+                        academic_year=year
+                    ).update(is_active=False, ended_at=timezone.now())
+
+                    enrollment, _ = Enrollment.objects.update_or_create(
+                        student=student,
+                        academic_year=year,
+                        defaults={
+                            "faculty": faculty,
+                            "promotion": promotion,
+                            "is_active": True,
+                            "ended_at": None,
+                        },
+                    )
+
+                    payment_profile = student_num % 5
+                    if payment_profile in (0, 1, 2):
+                        mark_installment_paid(enrollment, 1)
+                    if payment_profile in (0, 1):
+                        mark_installment_paid(enrollment, 2)
+
+                    uid = make_uid(fac_code, level, student_num)
+                    card, _ = Card.objects.update_or_create(
+                        uid=uid,
+                        defaults={
+                            "student": student,
+                            "enrollment": enrollment,
+                            "status": Card.STATUS_ACTIVE,
+                        },
+                    )
+
+                    attendance_rate = random.uniform(0.62, 0.96)
+                    target_present = min(
+                        35,
+                        max(15, int(len(school_days) * attendance_rate)),
+                    )
+                    present_days = set(random.sample(school_days, min(target_present, len(school_days))))
+
+                    for day in present_days:
+                        is_late = random.random() < 0.14
+                        event_time = time(8, random.randint(5, 45)) if is_late else time(
+                            7, random.randint(5, 14)
+                        )
+                        event_dt = timezone.make_aware(
+                            timezone.datetime.combine(day, event_time)
+                        )
+                        total_events += 1
+                        event = AccessEvent.objects.create(
+                            card=card,
+                            raw_uid=card.uid,
+                            request_id=f"seed-{matricule}-{day.isoformat()}",
+                            student=student,
+                            enrollment=enrollment,
+                            faculty=faculty,
+                            promotion=promotion,
+                            academic_year=year,
+                            result=AccessEvent.RESULT_ALLOWED,
+                            reason=AccessEvent.REASON_NONE,
+                            note="[seed] Presence",
+                            source="seed_demo",
+                        )
+                        event.created_at = event_dt
+                        event.save(update_fields=["created_at"])
+
+                    cpt_entries = random.randint(3, 8)
+                    cpt_balance = 0
+                    for entry_idx in range(cpt_entries):
+                        month_offset = random.randint(0, 5)
+                        entry_day = date(2026, 1 + month_offset, random.randint(1, 28))
+                        if random.random() < 0.6:
+                            delta = random.randint(1, 5)
+                            note = f"[seed] {random.choice(CPT_POSITIVE)}"
+                        else:
+                            delta = -random.randint(1, 4)
+                            note = f"[seed] {random.choice(CPT_NEGATIVE)}"
+                        cpt_balance += delta
+                        entry_dt = timezone.make_aware(
+                            timezone.datetime.combine(entry_day, time(12, 0))
+                        )
+                        entry = BehaviorPointEntry.objects.create(
+                            enrollment=enrollment,
+                            student=student,
+                            recorded_by=professor_user,
+                            points_delta=delta,
+                            note=note,
+                        )
+                        entry.created_at = entry_dt
+                        entry.save(update_fields=["created_at"])
+                        total_cpt += 1
+
+                    total_students += 1
+                    if student_num <= 2 and level == "L1" and fac_code == "GINFO":
+                        demo_students.append(matricule)
 
         RFIDSettings.objects.update_or_create(
             pk=1,
@@ -254,7 +308,12 @@ class Command(BaseCommand):
         )
 
         self.stdout.write(self.style.SUCCESS("Donnees de demonstration creees."))
+        self.stdout.write(f"Facultes: {len(FACULTIES)} | Promotions: {len(promotions_by_key)}")
+        self.stdout.write(f"Etudiants: {total_students} ({STUDENTS_PER_PROMOTION} par promotion)")
+        self.stdout.write(f"Evenements de presence: {total_events} | Entrees CPT: {total_cpt}")
         self.stdout.write("Compte admin: admin / admin123")
-        self.stdout.write("Compte professeur: prof.info / prof123")
-        self.stdout.write("Comptes etudiants: ETSIA-001 / student123, ETSIA-002 / student123")
-        self.stdout.write("Cartes RFID: 04A1B2C3 autorisee, 04D4E5F6 bloquee pour frais impayes.")
+        self.stdout.write("Comptes professeurs: prof.ginfo, prof.gind, prof.po / prof123")
+        if demo_students:
+            self.stdout.write(
+                f"Exemples etudiants: {', '.join(demo_students)} / student123"
+            )
